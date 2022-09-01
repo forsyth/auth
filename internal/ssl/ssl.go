@@ -19,23 +19,23 @@ const MaxMsg = 4096
 
 // Conn represents one of these SSL connections.
 type Conn struct {
-	fd	net.Conn	// underlying network connection
-	in, out	connState
-	buf	[MaxMsg]byte	// hold encrypted output block
+	fd      net.Conn // underlying network connection
+	in, out connState
+	buf     [MaxMsg]byte // hold encrypted output block
 }
 
 // connState represents the state of one direction.
 type connState struct {
-	lk	sync.Mutex
-	secret	[sha1.Size]byte
-	seqno	uint32
-	rc4	*rc4.Cipher	// non-nil if in encrypted mode
+	lk     sync.Mutex
+	secret [sha1.Size]byte
+	seqno  uint32
+	rc4    *rc4.Cipher // non-nil if in encrypted mode
 }
 
 // Cklient returns an SSL connection that applies SSL to the transport fd.
 func Client(fd net.Conn) *Conn {
 	// initially it's not encrypted
-	return &Conn {
+	return &Conn{
 		fd: fd,
 	}
 }
@@ -45,7 +45,7 @@ func (ssl *Conn) StartCipher(inkey, outkey []byte) error {
 	if len(inkey) < 16 || len(outkey) < 16 {
 		return errors.New("key too short")
 	}
-	c1, err := rc4.NewCipher(inkey[0: 16])
+	c1, err := rc4.NewCipher(inkey[0:16])
 	if err != nil {
 		return err
 	}
@@ -96,7 +96,7 @@ func (ssl *Conn) Read(buf []byte) (int, error) {
 	if (count[0] & 0x80) == 0 {
 		return 0, errors.New("received invalid count")
 	}
-	n := int(count[0] & 0x7F) << 8 | int(count[1])	// SSL-style count, no pad
+	n := int(count[0]&0x7F)<<8 | int(count[1]) // SSL-style count, no pad
 	if ssl.in.rc4 != nil {
 		var digest [sha1.Size]byte
 		n -= len(digest)
@@ -120,7 +120,7 @@ func (ssl *Conn) Read(buf []byte) (int, error) {
 		if n <= 0 || n > len(buf) {
 			return 0, fmt.Errorf("read implausible record length: %d", count)
 		}
-		nr, err := io.ReadFull(ssl.fd, buf[0: n])
+		nr, err := io.ReadFull(ssl.fd, buf[0:n])
 		if err != nil {
 			return 0, fmt.Errorf("read expected %d bytes, got %d: %w", count, nr, err)
 		}
@@ -142,17 +142,17 @@ func (ssl *Conn) Write(buf []byte) (int, error) {
 	if ssl.out.rc4 != nil {
 		n += sha1.Size
 	}
-	count[0] = byte(0x80 | (n>>8))
+	count[0] = byte(0x80 | (n >> 8))
 	count[1] = byte(n)
 	nw, err := ssl.fd.Write(count[:])
 	if err != nil {
 		return 0, fmt.Errorf("error writing count: %w", err)
 	}
-	if nw !=2 {
+	if nw != 2 {
 		return 0, errors.New("short write of count")
 	}
 	if ssl.out.rc4 != nil {
-		enc := ssl.buf[0: len(buf)]
+		enc := ssl.buf[0:len(buf)]
 		hash(ssl.out.secret[:], buf, ssl.out.seqno, digest[:])
 		ssl.out.rc4.XORKeyStream(digest[:], digest[:])
 		ssl.out.rc4.XORKeyStream(enc, buf)

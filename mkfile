@@ -9,7 +9,7 @@ all:V:
 	go vet $TARG
 
 fmt:V:
-	go fmt $TARG
+	for a in $TARG; do gofmt -s -l -w $a/*.go; done
 
 test:V:
 	go test -v ./secstore

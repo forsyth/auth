@@ -1,10 +1,10 @@
 package ssl_test
 
 import (
+	"github.com/forsyth/auth/internal/ssl"
 	"net"
 	"sync"
 	"testing"
-	"github.com/forsyth/auth/internal/ssl"
 )
 
 func TestSSL(t *testing.T) {
@@ -16,7 +16,7 @@ func TestSSL(t *testing.T) {
 	wg.Wait()
 	secret := make([]byte, 20)
 	for i := range secret {
-		secret[i] = byte(i+1)
+		secret[i] = byte(i + 1)
 	}
 	f0, f1 = net.Pipe()
 	wg.Add(2)
