@@ -15,27 +15,16 @@ const MaxMsg = 4096
 
 const VERSION = "secstore"
 
+// Secstore provides a set of operations on a remote secstore.
+type Secstore struct {
+	conn	net.Conn
+	Peer	string
+}
+
 // Version returns the secstore version and algorithm, to be sent to the peer.
 func Version() string {
 	return fmt.Sprintf("%s\tPAK\n", VERSION)
 }
-
-/*
-	mkseckey:	fn(pass: string): array of byte;
-	connect:		fn(addr: string, user: string, pwhash: array of byte): (ref Dial->Connection, string, string);
-	dial:		fn(addr: string): ref Dial->Connection;
-	auth:		fn(conn: ref Dial->Connection, user: string, pwhash: array of byte): (string, string);
-	files:		fn(conn: ref Dial->Connection): list of (string, int, string, string, array of byte);
-	getfile:	fn(conn: ref Dial->Connection, filename: string, maxsize: int): array of byte;
-	remove:	fn(conn: ref Dial->Connection, filename: string): int;
-	putfile:	fn(conn: ref Dial->Connection, filename: string, data: array of byte): int;
-	bye:		fn(conn: ref Dial->Connection);
-
-	mkfilekey:	fn(pass: string): array of byte;
-	decrypt:	fn(a: array of byte, key: array of byte): array of byte;
-	encrypt:	fn(a: array of byte, key: array of byte): array of byte;
-	erasekey:	fn(a: array of byte);
-*/
 
 // EncryptionKeys converts a session key to a pair of encryption keys, one for each direction.
 func EncryptionKeys(sigma []byte, direction int) [2][]byte {
@@ -98,22 +87,6 @@ func Auth(conn *ssl.Conn, user string, pwhash []byte) (string, string, error) {
 	return pak.Peer, "", nil
 }
 
-// Connect connects to a secstore service at the given network and address, and
-// returns (conn, sname, diag, err). On success,
-// the connection is authenticated to the given user, using the password as hashed by KeyHash.
-// The connection can then be used for secstore commands, typically via Files, GetFile, PutFIle etc.
-// Connect also returns the remote server's name for itself, as exchanged using the
-// key-exchange protocol, typically just "secstore". If diag is not "", it contains a demand
-// for an extra level of authentication, currently only "need pin". See Auth for what to do.
-func Connect(network, addr string, user string, pwhash []byte) (*ssl.Conn, string, string, error) {
-	conn, err := Dial(network, addr)
-	if err != nil {
-		return nil, "", "", err
-	}
-	sname, diag, err := Auth(conn, user, pwhash)
-	return conn, sname, diag, nil
-}
-
 // CanSecstore checks whether secstore exists at the remote, and has a given user.
 // The remote might sensibly be configured not to reveal whether a user exists or not.
 func CanSecstore(network string, addr string, user string) error {
@@ -136,13 +109,29 @@ func CanSecstore(network string, addr string, user string) error {
 	return nil
 }
 
+// Connect connects to a secstore service at the given network and address, and
+// returns (conn, sname, diag, err). On success,
+// the connection is authenticated to the given user, using the password as hashed by KeyHash.
+// The connection can then be used for secstore commands, typically via Files, GetFile, PutFIle etc.
+// Connect also returns the remote server's name for itself, as exchanged using the
+// key-exchange protocol, typically just "secstore". If diag is not "", it contains a demand
+// for an extra level of authentication, currently only "need pin". See Auth for what to do.
+func Connect(network, addr string, user string, pwhash []byte) (*Secstore, string, error) {
+	conn, err := Dial(network, addr)
+	if err != nil {
+		return nil, "", err
+	}
+	sname, diag, err := Auth(conn, user, pwhash)
+	return &Secstore{conn: conn, Peer: sname}, diag, nil
+}
+
 // SendPin sends the remote the PIN it has demanded as an extra check.
-func SendPin(conn net.Conn, pin string) error {
-	err := writeString(conn, "STA"+pin)
+func (sec *Secstore) SendPin(pin string) error {
+	err := writeString(sec.conn, "STA"+pin)
 	if err != nil {
 		return fmt.Errorf("error writing pin: %w", err)
 	}
-	s, err := readString(conn)
+	s, err := readString(sec.conn)
 	if err != nil {
 		return fmt.Errorf("error reading pin reply: %w", err)
 	}
@@ -155,10 +144,7 @@ func SendPin(conn net.Conn, pin string) error {
 // Bye writes a closing message to attempt a graceful close, and closes the connection.
 // Errors are ignored as by now uninteresting. Note that if calling Bye causes Close to be called twice,
 // the effect is "undefined" by interface Closer, an annoying property.
-func Bye(conn net.Conn) {
-	if conn == nil {
-		return
-	}
-	writeString(conn, "BYE")
-	conn.Close()
+func (sec *Secstore) Bye() {
+	writeString(sec.conn, "BYE")
+	sec.conn.Close()
 }

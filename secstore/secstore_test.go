@@ -5,7 +5,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/forsyth/auth/internal/ssl"
 	"github.com/forsyth/auth/secstore"
 )
 
@@ -22,13 +21,13 @@ func clientFileKey() []byte {
 }
 
 func TestSecstore(t *testing.T) {
-	conn, sname, _, err := secstore.Connect("tcp", secstoreServer, clientName, clientKey())
+	sec, _, err := secstore.Connect("tcp", secstoreServer, clientName, clientKey())
 	if err != nil {
 		t.Fatalf("can't dial %s: %s", secstoreServer, err)
 	}
-	defer secstore.Bye(conn)
-	t.Logf("connected to %s (%s) as %s", secstoreServer, sname, clientName)
-	files, err := secstore.Files(conn)
+	defer sec.Bye()
+	t.Logf("connected to %s (%s) as %s", secstoreServer, sec.Peer, clientName)
+	files, err := sec.Files()
 	if err != nil {
 		t.Errorf("failed to get file list: %s", err)
 		return
@@ -37,18 +36,18 @@ func TestSecstore(t *testing.T) {
 		t.Logf("%s %d %s %v", f.Name, f.Size, f.ModTime, f.Hash)
 	}
 	key := clientFileKey()
-	testFileGet(t, conn, files, key)
-	testFilePut(t, conn, key)
+	testFileGet(t, sec, files, key)
+	testFilePut(t, sec, key)
 }
 
-func testFileGet(t *testing.T, conn *ssl.Conn, files []secstore.DirEntry, key []byte) {
+func testFileGet(t *testing.T, sec *secstore.Secstore, files []secstore.DirEntry, key []byte) {
 	for _, dirent := range files {
 		name := dirent.Name
 		if dirent.Size > 32*1024 { // keep small but non-trivial for testing
 			t.Logf("not fetching %s: %d bytes", name, dirent.Size)
 			continue
 		}
-		data, err := fetchFile(conn, name, key)
+		data, err := fetchFile(sec, name, key)
 		if err != nil {
 			t.Errorf("fetch %s: %s", name, err)
 			continue
@@ -63,8 +62,8 @@ func testFileGet(t *testing.T, conn *ssl.Conn, files []secstore.DirEntry, key []
 	}
 }
 
-func fetchFile(conn *ssl.Conn, name string, key []byte) ([]byte, error) {
-	rawdata, err := secstore.GetFile(conn, name, 0)
+func fetchFile(sec *secstore.Secstore, name string, key []byte) ([]byte, error) {
+	rawdata, err := sec.GetFile(name, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get file: %w", err)
 	}
@@ -87,19 +86,17 @@ func testEncrypt(data []byte, key []byte) ([]byte, error) {
 	if !eq(data, cdata) {
 		return nil, fmt.Errorf("second decrypt different")
 	}
-	//println(len(xdata))
-	//println(len(ydata))
 	return encdata, nil
 }
 
-func testFilePut(t *testing.T, conn *ssl.Conn, key []byte) {
+func testFilePut(t *testing.T, sec *secstore.Secstore, key []byte) {
 	file := []byte("mary had a little lamb\nits fleece was white as snow\nand everywhere that mary went\nthe lamb was sure to go\n")
 	data, err := secstore.Encrypt(file, key)
 	if err != nil {
 		t.Errorf("failed to encrypt: %s", err)
 		return
 	}
-	err = secstore.PutFile(conn, "mary", data)
+	err = sec.PutFile("mary", data)
 	if err != nil {
 		t.Errorf("failed to put 'mary': %s", err)
 		return

@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"net"
 	"strconv"
 	"time"
 )
@@ -18,8 +17,8 @@ type DirEntry struct {
 }
 
 // Files returns a list of the files in the user's secstore.
-func Files(conn net.Conn) ([]DirEntry, error) {
-	file, err := GetFile(conn, ".", 0)
+func (sec *Secstore) Files() ([]DirEntry, error) {
+	file, err := sec.GetFile(".", 0)
 	if err != nil {
 		return nil, fmt.Errorf("error reading secstore directory: %w", err)
 	}
@@ -65,15 +64,15 @@ func Files(conn net.Conn) ([]DirEntry, error) {
 
 // Getfile fetches a file "name" from the user's secstore, returning its
 // contents, which will normally be encrypted by the user's file key.
-func GetFile(conn net.Conn, name string, maxsize uint64) ([]byte, error) {
+func (sec *Secstore) GetFile(name string, maxsize uint64) ([]byte, error) {
 	if maxsize == 0 {
 		maxsize = MaxFileSize
 	}
-	_, err := fmt.Fprintf(conn, "GET %s\n", name)
+	_, err := fmt.Fprintf(sec.conn, "GET %s\n", name)
 	if err != nil {
 		return nil, fmt.Errorf("can't write request: %w", err)
 	}
-	s, err := readString(conn)
+	s, err := readString(sec.conn)
 	if err != nil {
 		return nil, fmt.Errorf("can't get file: %w", err)
 	}
@@ -92,7 +91,7 @@ func GetFile(conn net.Conn, name string, maxsize uint64) ([]byte, error) {
 	}
 	file := make([]byte, nb)
 	for nr := int64(0); nr < nb; {
-		n, err := conn.Read(file[nr:nb])
+		n, err := sec.conn.Read(file[nr:nb])
 		if err != nil {
 			return nil, fmt.Errorf("error reading %q: %w", name, err)
 		}
@@ -106,15 +105,15 @@ func GetFile(conn net.Conn, name string, maxsize uint64) ([]byte, error) {
 
 // PutFile adds or updates a file "name" in the user's secstore,
 // where data provides the new contents, which should be previously encrypted.
-func PutFile(conn net.Conn, name string, data []byte) error {
+func (sec *Secstore) PutFile(name string, data []byte) error {
 	if len(data) > MaxFileSize {
 		return fmt.Errorf("%q: file too long", name)
 	}
-	_, err := fmt.Fprintf(conn, "PUT %s\n", name)
+	_, err := fmt.Fprintf(sec.conn, "PUT %s\n", name)
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(conn, "%d", len(data))
+	_, err = fmt.Fprintf(sec.conn, "%d", len(data))
 	if err != nil {
 		return err
 	}
@@ -123,7 +122,7 @@ func PutFile(conn net.Conn, name string, data []byte) error {
 		if n > MaxMsg {
 			n = MaxMsg
 		}
-		_, err = conn.Write(data[o : o+n])
+		_, err = sec.conn.Write(data[o : o+n])
 		if err != nil {
 			return err
 		}
@@ -133,8 +132,8 @@ func PutFile(conn net.Conn, name string, data []byte) error {
 }
 
 // Remove removes a file from the user's secstore.
-func Remove(conn net.Conn, name string) error {
-	_, err := fmt.Fprintf(conn, "RM %s\n", name)
+func (sec *Secstore) Remove(name string) error {
+	_, err := fmt.Fprintf(sec.conn, "RM %s\n", name)
 	if err != nil {
 		// TO DO: should have ack
 		return fmt.Errorf("can't remove %q: %w", name, err)
