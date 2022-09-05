@@ -18,6 +18,7 @@ var (
 	ErrDecrypt      = errors.New("file did not decrypt correctly") // should only be wrong key
 )
 
+// FileKey converts a secret s into a secstore file key, hiding the text of the key.
 func FileKey(s string) []byte {
 	key := []byte(s)
 	sha := sha1.New()
@@ -29,6 +30,7 @@ func FileKey(s string) []byte {
 	return skey[0:aes.BlockSize:aes.BlockSize]
 }
 
+// Decrypt decrypts the bytes read from a file, using the given key, returning the decoded bytes or an error.
 func Decrypt(file []byte, key []byte) ([]byte, error) {
 	length := len(file)
 	if length == 0 {
@@ -49,6 +51,7 @@ func Decrypt(file []byte, key []byte) ([]byte, error) {
 	return file[aes.BlockSize : length-Checklen], nil
 }
 
+// Encrypt encrypts the bytes to be written to a file, using the given key, returning the encoded bytes or an error.
 func Encrypt(file []byte, key []byte) ([]byte, error) {
 	const ivSize = aes.BlockSize
 	dat := make([]byte, ivSize+len(file)+Checklen)
