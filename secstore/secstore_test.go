@@ -74,7 +74,7 @@ func TestFileGet(t *testing.T) {
 	}
 	t.Logf("decrypted: %d bytes", len(data))
 	println(string(data))
-	xdata, err := secstore.Encrypt(data, clientFileKey(), rawdata[0: 16])
+	xdata, err := secstore.Encrypt(data, clientFileKey(), rawdata[0:16])
 	if err != nil {
 		t.Errorf("failed to encrypt file: users: %v", err)
 		return
