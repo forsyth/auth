@@ -2,7 +2,6 @@ package secstore_test
 
 import (
 	"fmt"
-	"net"
 	"os"
 	"testing"
 
@@ -22,26 +21,10 @@ func clientFileKey() []byte {
 	return secstore.FileKey(os.Getenv("TESTKEY"))
 }
 
-func TestBasicSecstoreConnection(t *testing.T) {
-	conn, err := net.Dial("tcp", secstoreServer)
-	if err != nil {
-		t.Errorf("can't dial %s: %s", secstoreServer, err)
-		return
-	}
-	conn = ssl.Client(conn)
-	defer conn.Close()
-	pak, err := secstore.Client(conn, secstore.Version(), clientName, clientKey())
-	if err != nil {
-		t.Errorf("access as %s rejected: %s", clientName, err)
-		return
-	}
-	t.Logf("pak succeeded as %s: %#v", clientName, pak)
-}
-
-func TestFileList(t *testing.T) {
+func TestSecstore(t *testing.T) {
 	conn, sname, _, err := secstore.Connect("tcp", secstoreServer, clientName, clientKey())
 	if err != nil {
-		t.Errorf("can't connect to %s: %s", secstoreServer, err)
+		t.Fatalf("can't dial %s: %s", secstoreServer, err)
 	}
 	defer secstore.Bye(conn)
 	t.Logf("connected to %s (%s) as %s", secstoreServer, sname, clientName)
@@ -53,22 +36,17 @@ func TestFileList(t *testing.T) {
 	for _, f := range files {
 		t.Logf("%s %d %s %v", f.Name, f.Size, f.ModTime, f.Hash)
 	}
-}
-
-var testFiles = []string {
-	"users",
-	"factotum",
-}
-
-func TestFileGet(t *testing.T) {
-	conn, sname, _, err := secstore.Connect("tcp", secstoreServer, clientName, clientKey())
-	if err != nil {
-		t.Errorf("can't connect to %s: %s", secstoreServer, err)
-	}
-	defer secstore.Bye(conn)
-	t.Logf("connected to %s (%s) as %s", secstoreServer, sname, clientName)
 	key := clientFileKey()
-	for _, name := range testFiles {
+	testFileGet(t, conn, files, key)
+}
+
+func testFileGet(t *testing.T, conn *ssl.Conn, files []secstore.DirEntry, key []byte) {
+	for _, dirent := range files {
+		name := dirent.Name
+		if dirent.Size > 32*1024 {	// keep small but non-trivial for testing
+			t.Logf("not fetching %s: %d bytes", name, dirent.Size)
+			continue
+		}
 		data, err := fetchFile(conn, name, key)
 		if err != nil {
 			t.Errorf("fetch %s: %s", name, err)

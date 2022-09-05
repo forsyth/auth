@@ -9,8 +9,8 @@ import (
 	"time"
 )
 
-// Direntry describes a file stored by secstore.
-type Direntry struct {
+// DirEntry describes a file stored by secstore.
+type DirEntry struct {
 	Name    string    // file name
 	Size    uint64    // file size in bytes
 	ModTime time.Time // time last stored
@@ -18,12 +18,12 @@ type Direntry struct {
 }
 
 // Files returns a list of the files in the user's secstore.
-func Files(conn net.Conn) ([]Direntry, error) {
+func Files(conn net.Conn) ([]DirEntry, error) {
 	file, err := GetFile(conn, ".", 0)
 	if err != nil {
 		return nil, fmt.Errorf("error reading secstore directory: %w", err)
 	}
-	var files []Direntry
+	var files []DirEntry
 	scanner := bufio.NewScanner(bytes.NewReader(file))
 	for scanner.Scan() {
 		s := scanner.Text()
@@ -53,7 +53,7 @@ func Files(conn net.Conn) ([]Direntry, error) {
 		if err != nil {
 			sha1 = nil
 		}
-		files = append(files, Direntry{
+		files = append(files, DirEntry{
 			Name:    name,
 			Size:    size,
 			ModTime: mtime,
