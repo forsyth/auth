@@ -13,6 +13,11 @@ import (
 const Checkpat = "XXXXXXXXXXXXXXXX" //  it's what Plan 9's aescbc uses
 const Checklen = len(Checkpat)
 
+var (
+	ErrFileTooSmall = errors.New("encrypted file size too small")
+	ErrDecrypt = errors.New("file did not decrypt correctly")	// should only be wrong key
+)
+
 func FileKey(s string) []byte {
 	key := []byte(s)
 	sha := sha1.New()
@@ -30,7 +35,7 @@ func Decrypt(file []byte, key []byte) ([]byte, error) {
 		return file, nil
 	}
 	if length < aes.BlockSize+Checklen && false {
-		return nil, errors.New("encrypted file length too small")
+		return nil, ErrFileTooSmall
 	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -39,21 +44,19 @@ func Decrypt(file []byte, key []byte) ([]byte, error) {
 	cb := cbc.NewCBCDecrypter(block, file[0:aes.BlockSize])
 	cb.CryptBlocks(file[aes.BlockSize:], file[aes.BlockSize:])
 	if string(file[length-Checklen:]) != Checkpat {
-		println(string(file[aes.BlockSize:]))
-		return nil, errors.New("file did not decrypt correctly")
+		return nil, ErrDecrypt
 	}
 	return file[aes.BlockSize : length-Checklen], nil
 }
 
-func Encrypt(file []byte, key []byte, iv []byte) ([]byte, error) {
+func Encrypt(file []byte, key []byte) ([]byte, error) {
 	const ivSize = aes.BlockSize
 	dat := make([]byte, ivSize+len(file)+Checklen)
-	xiv := dat[0:ivSize]
-	_, err := rand.Read(xiv)
+	iv := dat[0:ivSize]
+	_, err := rand.Read(iv)
 	if err != nil {
 		return nil, fmt.Errorf("read of random: %w", err)
 	}
-	copy(xiv, iv)
 	copy(dat[ivSize:], file)
 	copy(dat[ivSize+len(file):], Checkpat)
 	block, err := aes.NewCipher(key)

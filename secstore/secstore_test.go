@@ -1,6 +1,7 @@
 package secstore_test
 
 import (
+	"fmt"
 	"net"
 	"os"
 	"testing"
@@ -54,6 +55,11 @@ func TestFileList(t *testing.T) {
 	}
 }
 
+var testFiles = []string {
+	"users",
+	"factotum",
+}
+
 func TestFileGet(t *testing.T) {
 	conn, sname, _, err := secstore.Connect("tcp", secstoreServer, clientName, clientKey())
 	if err != nil {
@@ -61,34 +67,50 @@ func TestFileGet(t *testing.T) {
 	}
 	defer secstore.Bye(conn)
 	t.Logf("connected to %s (%s) as %s", secstoreServer, sname, clientName)
-	rawdata, err := secstore.GetFile(conn, "factotum", 0)
+	key := clientFileKey()
+	for _, name := range testFiles {
+		data, err := fetchFile(conn, name, key)
+		if err != nil {
+			t.Errorf("fetch %s: %s", name, err)
+			continue
+		}
+		t.Logf("decrypted %s: %d bytes", name, len(data))
+		data, err = testEncrypt(data, key)
+		if err != nil {
+			t.Errorf("encrypt %s: %s", name, err)
+			continue
+		}
+		t.Logf("re-encrypted %s ok, %d bytes", name, len(data))
+	}
+}
+
+func fetchFile(conn *ssl.Conn, name string, key []byte) ([]byte, error) {
+	rawdata, err := secstore.GetFile(conn, name, 0)
 	if err != nil {
-		t.Errorf("failed to get file: users: %v", err)
-		return
+		return nil, fmt.Errorf("failed to get file: %w", err)
 	}
-	t.Logf("file users: %d bytes", len(rawdata))
-	data, err := secstore.Decrypt(rawdata, clientFileKey())
+	data, err := secstore.Decrypt(rawdata, key)
 	if err != nil {
-		t.Errorf("failed to decrypt file: users: %v", err)
-		return
+		return nil, fmt.Errorf("failed to decrypt file: %w", err)
 	}
-	t.Logf("decrypted: %d bytes", len(data))
-	println(string(data))
-	xdata, err := secstore.Encrypt(data, clientFileKey(), rawdata[0:16])
+	return data, nil
+}
+
+func testEncrypt(data []byte, key []byte) ([]byte, error) {
+	encdata, err := secstore.Encrypt(data, key)
 	if err != nil {
-		t.Errorf("failed to encrypt file: users: %v", err)
-		return
+		return nil, fmt.Errorf("failed to encrypt: %w", err)
 	}
-	ydata, _ := secstore.Decrypt(xdata, clientFileKey())
-	if !eq(data, ydata) {
-		t.Errorf("second decrypt different")
+	cdata, err := secstore.Decrypt(encdata, key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt: %w", err)
 	}
-	println(len(xdata))
-	println(len(ydata))
-	if !eq(rawdata, xdata) {
-		t.Errorf("failed to re-encrypt properly")
-		return
+	if !eq(data, cdata) {
+		return nil, fmt.Errorf("second decrypt different")
 	}
+	//println(len(xdata))
+	//println(len(ydata))
+	return encdata, nil
 }
 
 func eq(a, b []byte) bool {
@@ -97,7 +119,6 @@ func eq(a, b []byte) bool {
 	}
 	for i := range a {
 		if a[i] != b[i] {
-			println("mismatch", i, a[i], b[i])
 			return false
 		}
 	}
