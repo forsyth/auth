@@ -15,7 +15,7 @@ const Checklen = len(Checkpat)
 
 var (
 	ErrFileTooSmall = errors.New("encrypted file size too small")
-	ErrDecrypt = errors.New("file did not decrypt correctly")	// should only be wrong key
+	ErrDecrypt      = errors.New("file did not decrypt correctly") // should only be wrong key
 )
 
 func FileKey(s string) []byte {

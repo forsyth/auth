@@ -38,12 +38,13 @@ func TestSecstore(t *testing.T) {
 	}
 	key := clientFileKey()
 	testFileGet(t, conn, files, key)
+	testFilePut(t, conn, key)
 }
 
 func testFileGet(t *testing.T, conn *ssl.Conn, files []secstore.DirEntry, key []byte) {
 	for _, dirent := range files {
 		name := dirent.Name
-		if dirent.Size > 32*1024 {	// keep small but non-trivial for testing
+		if dirent.Size > 32*1024 { // keep small but non-trivial for testing
 			t.Logf("not fetching %s: %d bytes", name, dirent.Size)
 			continue
 		}
@@ -89,6 +90,21 @@ func testEncrypt(data []byte, key []byte) ([]byte, error) {
 	//println(len(xdata))
 	//println(len(ydata))
 	return encdata, nil
+}
+
+func testFilePut(t *testing.T, conn *ssl.Conn, key []byte) {
+	file := []byte("mary had a little lamb\nits fleece was white as snow\nand everywhere that mary went\nthe lamb was sure to go\n")
+	data, err := secstore.Encrypt(file, key)
+	if err != nil {
+		t.Errorf("failed to encrypt: %s", err)
+		return
+	}
+	err = secstore.PutFile(conn, "mary", data)
+	if err != nil {
+		t.Errorf("failed to put 'mary': %s", err)
+		return
+	}
+	t.Logf("put file 'mary'")
 }
 
 func eq(a, b []byte) bool {
