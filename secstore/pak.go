@@ -13,24 +13,30 @@ import (
 )
 
 // note: this implementation uses many of the original names,
-// to keep it aligned with the Plan 9/Plan 9 port implementation,
+// to keep it aligned with the Plan 9/Plan 9 port/Inferno implementations,
 //  but that leads to using hexX for an ascii version of X,
 // which is actually base64, not hex.
 
+// PAK holds a negotiated session key and the name presented by the other party after negotiation.
 type PAK struct {
 	Peer    string // what the other client/server calls itself
 	Session []byte // negotiated session key
 }
 
+// PW is used only on the server, to represent a user and their key, during and after negotiation.
 type PW struct {
-	Key any
-	Hi  *big.Int // H(passphrase)^-1 mod p
+	Key any      // a value provided by the user manager identifying a user
+	Hi  *big.Int // H(passphrase)^-1 mod p	// a transformation of the user's (hashed) secret
 }
 
+// UserManager manages a set of users.
 type UserManager interface {
+
+	// Look returns a PW value representing a given user, or an error if the user doesn't exist (or has expired).
 	Look(name string) (*PW, error)
 }
 
+// pakParams holds the fixed parameter values for the PAK protocol.
 type pakParams struct {
 	q *big.Int
 	p *big.Int
@@ -153,28 +159,28 @@ func Client(conn io.ReadWriter, version string, C string, pass []byte) (*PAK, er
 	m.Mod(m, pak.p)
 	hexm := enc64(m.Bytes())
 
-	err = writeString(conn, fmt.Sprintf("%sC=%s\nm=%s\n", version, C, hexm))
+	_, err = fmt.Fprintf(conn, "%sC=%s\nm=%s\n", version, C, hexm)
 	if err != nil {
 		return nil, err
 	}
 
 	// recv g**y, S, check hash1(g**xy)
-	s, err := readstr(conn)
+	s, err := readString(conn)
 	if err != nil {
-		err = writerr(conn, "couldn't read g**y: "+err.Error())
+		err = writeError(conn, "couldn't read g**y: "+err.Error())
 		return nil, err
 	}
 	// should be: "mu=%s\nk=%s\nS=%s\n"
 	flds := strings.Split(s, "\n")
 	if len(flds) != 4 {
-		err = writerr(conn, "verifier syntax error")
+		err = writeError(conn, "verifier syntax error")
 		return nil, err
 	}
 	hexmu := ex("mu=", flds[0])
 	ks := ex("k=", flds[1])
 	S := ex("S=", flds[2])
 	if hexmu == "" || ks == "" || S == "" {
-		err = writerr(conn, "verifier syntax error")
+		err = writeError(conn, "verifier syntax error")
 		return nil, err
 	}
 	mu, err := dec64(hexmu)
@@ -186,14 +192,14 @@ func Client(conn io.ReadWriter, version string, C string, pass []byte) (*PAK, er
 	digest := shorthash("server", C, S, hexm, hexmu, hexsigma, hexHi)
 	kc := enc64(digest)
 	if ks != kc {
-		err = writerr(conn, "verifier didn't match")
+		err = writeError(conn, "verifier didn't match")
 		return nil, err
 	}
 
 	// send hash2(g**xy)
 	digest = shorthash("client", C, S, hexm, hexmu, hexsigma, hexHi)
 	kc = enc64(digest)
-	err = writeString(conn, fmt.Sprintf("k'=%s\n", kc))
+	_, err = fmt.Fprintf(conn, "k'=%s\n", kc)
 	if err != nil {
 		return nil, err
 	}
@@ -214,14 +220,14 @@ func Client(conn io.ReadWriter, version string, C string, pass []byte) (*PAK, er
 func Server(conn io.ReadWriter, version string, S string, users UserManager) (*PAK, *PW, error) {
 	var err error
 
-	mess, err := readstr(conn)
+	mess, err := readString(conn)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error reading first mesg: %w", err)
 	}
 
 	// prefix has application version and algorithm
 	if !strings.HasPrefix(mess, version) {
-		err = writerr(conn, "protocol should start with ver alg")
+		err = writeError(conn, "protocol should start with ver alg")
 		return nil, nil, err
 	}
 	mess = mess[len(version):]
@@ -229,18 +235,18 @@ func Server(conn io.ReadWriter, version string, S string, users UserManager) (*P
 	// parse rest of first message into C, m
 	flds := strings.Split(mess, "\n")
 	if len(flds) != 3 {
-		err = writerr(conn, "PAK version syntax (fields)")
+		err = writeError(conn, "PAK version syntax (fields)")
 		return nil, nil, err
 	}
 	C := ex("C=", flds[0])
 	hexm := ex("m=", flds[1])
 	if C == "" || hexm == "" {
-		err = writerr(conn, "PAK version syntax, C=, m=")
+		err = writeError(conn, "PAK version syntax, C=, m=")
 		return nil, nil, err
 	}
 	m, err := dec64(hexm)
 	if err != nil {
-		err = writerr(conn, "PAK version syntax, m format")
+		err = writeError(conn, "PAK version syntax, m format")
 		return nil, nil, err
 	}
 	m.Mod(m, pak.p)
@@ -248,12 +254,12 @@ func Server(conn io.ReadWriter, version string, S string, users UserManager) (*P
 	// lookup client user
 	pw, err := users.Look(C)
 	if err != nil {
-		err = writerr(conn, err.Error())
+		err = writeError(conn, err.Error())
 		return nil, pw, err
 	}
 	if m.Cmp(big.NewInt(0)) == 0 {
 		// this can be disabled in original secstore by making special FICTITIOUS account that is used by default
-		err = writerr(conn, "account exists")
+		err = writeError(conn, "account exists")
 		return nil, nil, err
 	}
 	hexHi := enc64(pw.Hi.Bytes())
@@ -261,7 +267,7 @@ func Server(conn io.ReadWriter, version string, S string, users UserManager) (*P
 	// random y, mu=g**y, sigma=g**xy
 	y, err := bigrand()
 	if err != nil {
-		err = writerr(conn, "failed to generate random: "+err.Error())
+		err = writeError(conn, "failed to generate random: "+err.Error())
 		return nil, nil, err
 	}
 	y.Mod(y, pak.q)
@@ -279,26 +285,26 @@ func Server(conn io.ReadWriter, version string, S string, users UserManager) (*P
 	hexsigma := enc64(sigma.Bytes())
 	digest := shorthash("server", C, S, hexm, hexmu, hexsigma, hexHi)
 	ks := enc64(digest)
-	err = writeString(conn, fmt.Sprintf("mu=%s\nk=%s\nS=%s\n", hexmu, ks, S))
+	_, err = fmt.Fprintf(conn, "mu=%s\nk=%s\nS=%s\n", hexmu, ks, S)
 	if err != nil {
 		return nil, nil, fmt.Errorf("connection write error: %w", err)
 	}
 
 	// recv hash2(g**xy)
-	mess, err = readstr(conn)
+	mess, err = readString(conn)
 	if err != nil {
-		err = writerr(conn, "couldn't read verifier: "+err.Error())
+		err = writeError(conn, "couldn't read verifier: "+err.Error())
 		return nil, nil, err
 	}
 	kc := ex("k'=", strings.TrimRight(mess, "\n"))
 	if kc == "" {
-		err = writerr(conn, "verifier syntax error, k'=")
+		err = writeError(conn, "verifier syntax error, k'=")
 		return nil, nil, err
 	}
 	digest = shorthash("client", C, S, hexm, hexmu, hexsigma, hexHi)
 	ks = enc64(digest)
 	if ks != kc {
-		err = writerr(conn, "verifier didn't match")
+		err = writeError(conn, "verifier didn't match")
 		return nil, nil, err
 	}
 
@@ -306,11 +312,6 @@ func Server(conn io.ReadWriter, version string, S string, users UserManager) (*P
 	digest = shorthash("session", C, S, hexm, hexmu, hexsigma, hexHi)
 
 	return &PAK{Peer: C, Session: digest}, pw, nil
-}
-
-func writeString(f io.Writer, s string) error {
-	_, err := f.Write([]byte(s))
-	return err
 }
 
 func ex(tag string, s string) string {
