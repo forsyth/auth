@@ -32,7 +32,7 @@ type connState struct {
 	rc4    *rc4.Cipher // non-nil if in encrypted mode
 }
 
-// Cklient returns an SSL connection that applies SSL to the transport fd.
+// Client returns an SSL connection that applies SSL to the transport fd.
 func Client(fd net.Conn) *Conn {
 	// initially it's not encrypted
 	return &Conn{
