@@ -19,8 +19,8 @@ type result struct {
 
 const userName = "testuser"
 
-var pass = []byte("truly sorry")
-var wrongpass = []byte("nothing doing!")
+var pass = "truly sorry"
+var wrongpass = "nothing doing!"
 
 func TestPAK(t *testing.T) {
 	run(t, userName, pass, true)
@@ -28,11 +28,11 @@ func TestPAK(t *testing.T) {
 	run(t, userName, wrongpass, false)
 }
 
-func run(t *testing.T, name string, pass []byte, passes bool) {
+func run(t *testing.T, name string, pass string, passes bool) {
 	f0, f1 := net.Pipe()
 	wait := make(chan result, 2)
 	go server(f0, t, wait)
-	go client(f1, t, name, pass, wait)
+	go client(f1, t, name, secstore.KeyHash(pass), wait)
 	v1 := <-wait
 	v2 := <-wait
 	if !passes {
@@ -72,7 +72,7 @@ type users map[string]*user
 
 func NewUsers() users {
 	m := make(map[string]*user)
-	hexHi, _, Hi := secstore.PAKHi("testuser", pass)
+	hexHi, _, Hi := secstore.PAKHi("testuser", secstore.KeyHash(pass))
 	m["testuser"] = &user{"testuser", Hi, hexHi}
 	return users(m)
 }
