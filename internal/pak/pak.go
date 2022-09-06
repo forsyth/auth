@@ -76,13 +76,13 @@ func mustHexToBig(s string) *big.Int {
 // a hash function expensive to attack by brute force.
 const reps = 7
 
-func longhash(ver string, C string, passwd []byte) *big.Int {
+func longhash(ver string, C string, pwhash []byte) *big.Int {
 	aver := []byte(ver)
 	aC := []byte(C)
-	Cp := make([]byte, len(aver)+len(aC)+len(passwd))
+	Cp := make([]byte, len(aver)+len(aC)+len(pwhash))
 	copy(Cp, aver)
 	copy(Cp[len(aver):], aC)
-	copy(Cp[len(aver)+len(aC):], passwd)
+	copy(Cp[len(aver)+len(aC):], pwhash)
 	buf := []byte{}
 	for i := 0; i < reps; i++ {
 		key := []byte{byte('A' + i)}
@@ -114,12 +114,12 @@ func bigrand() (*big.Int, error) {
 	return new(big.Int).SetBytes(rbytes[:n]), nil
 }
 
-// PAKHi converts a client name and secret (in the clear)
+// PAKHi converts a client name and hashed secret (eg, secstore.KeyHash)
 // into a hashed value augmented by a protocol version,
-// that obscures the secret.
+// that further obscures the secret.
 // Hi = H^-1 mod p
-func PAKHi(C string, pass []byte) (string, *big.Int, *big.Int) {
-	H := longhash(VERSION, C, pass)
+func PAKHi(C string, pwhash []byte) (string, *big.Int, *big.Int) {
+	H := longhash(VERSION, C, pwhash)
 	Hi := new(big.Int)
 	Hi = Hi.ModInverse(H, pk.p)
 	return sio.Enc64(Hi.Bytes()), H, Hi
