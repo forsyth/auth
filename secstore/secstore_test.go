@@ -11,7 +11,7 @@ import (
 func getenv(name string) string {
 	s := os.Getenv(name)
 	if s == "" {
-		return "$"+name
+		return "$" + name
 	}
 	return s
 }

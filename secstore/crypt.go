@@ -31,7 +31,7 @@ func FileKey(s string) []byte {
 	return skey[0:aes.BlockSize:aes.BlockSize]
 }
 
-// Decrypt decrypts the bytes read from a file, using the given key, returning the decoded bytes or an error.
+// Decrypt decrypts the bytes read from a file, using the given key (the result of FileKey), returning the decoded bytes or an error.
 func Decrypt(file []byte, key []byte) ([]byte, error) {
 	length := len(file)
 	if length == 0 {
@@ -52,7 +52,7 @@ func Decrypt(file []byte, key []byte) ([]byte, error) {
 	return file[aes.BlockSize : length-checkLen], nil
 }
 
-// Encrypt encrypts the bytes to be written to a file, using the given key, returning the encoded bytes or an error.
+// Encrypt encrypts the bytes to be written to a file, using the given key (the result of FileKey), returning the encoded bytes or an error.
 func Encrypt(file []byte, key []byte) ([]byte, error) {
 	const ivSize = aes.BlockSize
 	dat := make([]byte, ivSize+len(file)+checkLen)

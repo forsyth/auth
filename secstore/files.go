@@ -65,7 +65,8 @@ func (sec *Secstore) Files() ([]DirEntry, error) {
 }
 
 // Getfile fetches a file "name" from the user's secstore, returning its
-// contents, which will normally be encrypted by the user's file key.
+// contents, which will normally be encrypted by the user's file key
+// and must be decrypted by Decrypt.
 func (sec *Secstore) GetFile(name string, maxsize uint64) ([]byte, error) {
 	if maxsize == 0 {
 		maxsize = MaxFileSize
@@ -106,7 +107,7 @@ func (sec *Secstore) GetFile(name string, maxsize uint64) ([]byte, error) {
 }
 
 // PutFile adds or updates a file "name" in the user's secstore,
-// where data provides the new contents, which should be previously encrypted.
+// where data provides the new contents after encryption by Encrypt.
 func (sec *Secstore) PutFile(name string, data []byte) error {
 	if len(data) > MaxFileSize {
 		return fmt.Errorf("%q: file too long", name)
