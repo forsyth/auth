@@ -3,7 +3,6 @@
 package secstore
 
 import (
-	"crypto/hmac"
 	"crypto/sha1"
 	"fmt"
 	"net"
@@ -20,8 +19,8 @@ const VERSION = "secstore"
 
 // Secstore provides a set of operations on a remote secstore.
 type Secstore struct {
-	conn	net.Conn
-	Peer	string
+	conn net.Conn
+	Peer string
 }
 
 // Version returns the secstore version and algorithm, to be sent to the peer.
@@ -33,11 +32,11 @@ func Version() string {
 func EncryptionKeys(sigma []byte, direction int) [2][]byte {
 	var secretin, secretout []byte
 	if direction != 0 {
-		secretout = hmac_sha1(sigma, []byte("one"))
-		secretin = hmac_sha1(sigma, []byte("two"))
+		secretout = sio.HMAC(sha1.New, sigma, []byte("one"))
+		secretin = sio.HMAC(sha1.New, sigma, []byte("two"))
 	} else {
-		secretout = hmac_sha1(sigma, []byte("two"))
-		secretin = hmac_sha1(sigma, []byte("one"))
+		secretout = sio.HMAC(sha1.New, sigma, []byte("two"))
+		secretin = sio.HMAC(sha1.New, sigma, []byte("one"))
 	}
 	return [2][]byte{secretin, secretout}
 }
@@ -125,6 +124,10 @@ func Connect(network, addr string, user string, pwhash []byte) (*Secstore, strin
 		return nil, "", err
 	}
 	sname, diag, err := Auth(conn, user, pwhash)
+	if err != nil {
+		conn.Close()
+		return nil, "", err
+	}
 	return &Secstore{conn: conn, Peer: sname}, diag, nil
 }
 
@@ -150,10 +153,4 @@ func (sec *Secstore) SendPin(pin string) error {
 func (sec *Secstore) Bye() {
 	sio.WriteString(sec.conn, "BYE")
 	sec.conn.Close()
-}
-
-func hmac_sha1(buf []byte, key []byte) []byte {
-	mac := hmac.New(sha1.New, key)
-	mac.Write(buf)
-	return mac.Sum(nil)
 }

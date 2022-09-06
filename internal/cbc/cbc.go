@@ -6,7 +6,7 @@
 
 // This is a version of crypto/cipher/cbc.go hacked to support Plan 9's version of CBC for AES,
 // which handled final blocks not a multiple of the block size, not using the padding scheme of PKCS#7.
-// Don't use this outside secstore and the aescbc command. It would be better to 
+// Don't use this outside secstore and the aescbc command. It would be better to
 
 package cbc
 
@@ -49,9 +49,9 @@ func (x *cbcEncrypter) CryptBlocks(dst, src []byte) {
 	if len(dst) < len(src) {
 		panic("crypto/cipher: output smaller than input")
 	}
-//	if subtle.InexactOverlap(dst[:len(src)], src) {
-//		panic("crypto/cipher: invalid buffer overlap")
-//	}
+	//	if subtle.InexactOverlap(dst[:len(src)], src) {
+	//		panic("crypto/cipher: invalid buffer overlap")
+	//	}
 
 	iv := x.iv
 
@@ -104,9 +104,9 @@ func (x *cbcDecrypter) CryptBlocks(dst, src []byte) {
 	if len(dst) < len(src) {
 		panic("crypto/cipher: output smaller than input")
 	}
-//	if subtle.InexactOverlap(dst[:len(src)], src) {
-//		panic("crypto/cipher: invalid buffer overlap")
-//	}
+	//	if subtle.InexactOverlap(dst[:len(src)], src) {
+	//		panic("crypto/cipher: invalid buffer overlap")
+	//	}
 	if len(src) == 0 {
 		return
 	}

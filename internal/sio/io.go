@@ -6,8 +6,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"math/big"
 	"io"
+	"math/big"
 
 	"github.com/forsyth/auth/internal/ssl"
 )

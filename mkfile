@@ -2,6 +2,9 @@ SHELL=/bin/rc
 
 TARG=\
 	./secstore \
+	./internal/cbc \
+	./internal/pak \
+	./internal/sio \
 	./internal/ssl \
 
 all:V:

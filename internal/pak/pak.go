@@ -1,10 +1,8 @@
 package pak
 
 import (
-	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha1"
-	"encoding/base64"
 	"fmt"
 	"hash"
 	"io"
@@ -88,9 +86,9 @@ func longhash(ver string, C string, passwd []byte) *big.Int {
 	buf := []byte{}
 	for i := 0; i < reps; i++ {
 		key := []byte{byte('A' + i)}
-		buf = append(buf, hmac_sha1(Cp, key)...)
+		buf = append(buf, sio.HMAC(sha1.New, Cp, key)...)
 	}
-	erasekey(Cp)
+	sio.EraseKey(Cp)
 	b := new(big.Int).SetBytes(buf)
 	h := new(big.Int)
 	h.Mod(b, pk.p)
@@ -104,7 +102,7 @@ func shaz(s string, state hash.Hash) {
 	if err != nil {
 		panic(err)
 	}
-	erasekey(a)
+	sio.EraseKey(a)
 }
 
 func bigrand() (*big.Int, error) {
@@ -325,30 +323,4 @@ func ex(tag string, s string) string {
 		return ""
 	}
 	return s[len(tag):]
-}
-
-func erasekey(a []byte) {
-	for i := range a {
-		a[i] = 0
-	}
-}
-
-func hmac_sha1(buf []byte, key []byte) []byte {
-	mac := hmac.New(sha1.New, key)
-	mac.Write(buf)
-	return mac.Sum(nil)
-}
-
-func Enc64(buf []byte) string {
-	return base64.StdEncoding.EncodeToString(buf)
-}
-
-func Dec64(s string) (*big.Int, error) {
-	a, err := base64.StdEncoding.DecodeString(s)
-	if err != nil {
-		return nil, err
-	}
-	i := new(big.Int)
-	i.SetBytes(a)
-	return i, nil
 }

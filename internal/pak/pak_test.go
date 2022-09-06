@@ -7,13 +7,14 @@ import (
 	"net"
 	"testing"
 
+	"github.com/forsyth/auth/internal/pak"
 	"github.com/forsyth/auth/secstore"
 )
 
 type result struct {
 	side string
-	pak  *secstore.PAK
-	pw   *secstore.PW // server only
+	pak  *pak.PAK
+	pw   *pak.PW // server only
 	err  error
 }
 
@@ -72,28 +73,28 @@ type users map[string]*user
 
 func NewUsers() users {
 	m := make(map[string]*user)
-	hexHi, _, Hi := secstore.PAKHi("testuser", secstore.KeyHash(pass))
+	hexHi, _, Hi := pak.PAKHi("testuser", secstore.KeyHash(pass))
 	m["testuser"] = &user{"testuser", Hi, hexHi}
 	return users(m)
 }
 
-func (us users) Look(name string) (*secstore.PW, error) {
+func (us users) Look(name string) (*pak.PW, error) {
 	u, ok := us[name]
 	if !ok {
 		return nil, fmt.Errorf("unknown user: %q", name)
 	}
-	return &secstore.PW{Key: u, Hi: u.hi}, nil
+	return &pak.PW{Key: u, Hi: u.hi}, nil
 }
 
 func server(conn net.Conn, t *testing.T, wait chan result) {
 	defer conn.Close()
 	userset := NewUsers()
-	pak, pw, err := secstore.Server(conn, secstore.Version(), "devious", userset)
-	wait <- result{"server", pak, pw, err}
+	pk, pw, err := pak.Server(conn, secstore.Version(), "devious", userset)
+	wait <- result{"server", pk, pw, err}
 }
 
 func client(conn net.Conn, t *testing.T, name string, pass []byte, wait chan result) {
 	defer conn.Close()
-	pak, err := secstore.Client(conn, secstore.Version(), name, pass)
-	wait <- result{"client", pak, nil, err}
+	pk, err := pak.Client(conn, secstore.Version(), name, pass)
+	wait <- result{"client", pk, nil, err}
 }
