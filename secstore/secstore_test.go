@@ -8,16 +8,24 @@ import (
 	"github.com/forsyth/auth/secstore"
 )
 
-const secstoreServer = "plan9.terzarima.net:5356"
+func getenv(name string) string {
+	s := os.Getenv(name)
+	if s == "" {
+		return "$"+name
+	}
+	return s
+}
 
-var clientName = os.Getenv("TESTUSER")
+var secstoreServer = getenv("TESTSERVER")
+
+var clientName = getenv("TESTUSER")
 
 func clientKey() []byte {
-	return secstore.KeyHash(os.Getenv("TESTKEY"))
+	return secstore.KeyHash(getenv("TESTKEY"))
 }
 
 func clientFileKey() []byte {
-	return secstore.FileKey(os.Getenv("TESTKEY"))
+	return secstore.FileKey(getenv("TESTKEY"))
 }
 
 func TestSecstore(t *testing.T) {
