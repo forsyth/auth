@@ -72,11 +72,11 @@ func mustHexToBig(s string) *big.Int {
 	return i
 }
 
-// H = (sha(ver,C,sha(passphrase)))^r mod p,
-// a hash function expensive to attack by brute force.
-const reps = 7
-
+// longhash calculates a hash function expensive
+// to attack by brute force:
+// H = (sha(ver,C,sha(passphrase)))^r mod p
 func longhash(ver string, C string, pwhash []byte) *big.Int {
+	const reps = 7
 	aver := []byte(ver)
 	aC := []byte(C)
 	Cp := make([]byte, len(aver)+len(aC)+len(pwhash))
@@ -96,6 +96,7 @@ func longhash(ver string, C string, pwhash []byte) *big.Int {
 	return h
 }
 
+// shaz adds a string to a running hash state.
 func shaz(s string, state hash.Hash) {
 	a := []byte(s)
 	_, err := state.Write(a)
@@ -105,6 +106,8 @@ func shaz(s string, state hash.Hash) {
 	sio.EraseKey(a)
 }
 
+// bigrand returns a large random number.
+// An error return means the system random number generator has failed.
 func bigrand() (*big.Int, error) {
 	var rbytes [240 / 8]byte
 	n, err := rand.Reader.Read(rbytes[:])
@@ -125,9 +128,8 @@ func PAKHi(C string, pwhash []byte) (string, *big.Int, *big.Int) {
 	return sio.Enc64(Hi.Bytes()), H, Hi
 }
 
-// another, faster, hash function for each party to
+// shorthash is another, faster, hash function for each party to
 // confirm that the other has the right secrets.
-
 func shorthash(mess string, C string, S string, m string, mu string, sigma string, Hi string) []byte {
 	state := sha1.New()
 	for i := 0; i < 2; i++ {
@@ -143,8 +145,8 @@ func shorthash(mess string, C string, S string, m string, mu string, sigma strin
 }
 
 // Client establishes a secure client-side connection on conn using the PAK Encrypted Key Exchange protocol,
-// where C is the client's name and pass is the user's passphrase. Client returns a value containing
-// the name of the peer (server) and a session secret to apply to the connection.
+// where C is the client's name and pass is a hash of the user's passphrase (eg, using secstore.KeyHash).
+// Client returns a PAK value containing the name of the peer (server) and a session secret to apply to the connection.
 func Client(conn io.ReadWriter, version string, C string, pass []byte) (*PAK, error) {
 	hexHi, H, _ := PAKHi(C, pass)
 
@@ -214,13 +216,14 @@ func Client(conn io.ReadWriter, version string, C string, pass []byte) (*PAK, er
 	return &PAK{Peer: S, Session: digest}, nil
 }
 
-// Server establishes a secure server-side connection on conn using the PAK protocol,
-// where S is the server's name and the user manager users can
-// return the PAK-related key values for a given user (or an error if no such user).
-// Server returns a value containing the name of the client and a session secret
-// to apply to the connection, the PW value provided by the user manager, or
-// an error. If the PW value is not nil and there's an error, a user manager can count
-// it as a failure to authenticate.
+// Server establishes a secure server-side connection on conn using the PAK protocol.
+// S is the server's name. The UserManager users returns the PAK-related key values
+// for a given user on request, or an error if there is no such user.
+// Server returns a PAK value containing the name of the client, a session secret
+// to apply to the connection and the PW value provided by the user manager, or
+// an error. If the PW value is not nil and there's an error, the caller can
+// instruct a user manager to count it as a failure to authenticate.
+// (In some implementations there might be a limit after which the account is disabled.)
 func Server(conn io.ReadWriter, version string, S string, users UserManager) (*PAK, *PW, error) {
 	var err error
 
