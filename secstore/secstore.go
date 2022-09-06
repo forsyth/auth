@@ -15,8 +15,6 @@ import (
 const MaxFileSize = 128 * 1024 // arbitrary default, same as Plan 9
 const MaxMsg = ssl.MaxMsg
 
-const VERSION = "secstore"
-
 // Secstore provides a set of operations on a remote secstore.
 type Secstore struct {
 	conn net.Conn
@@ -25,7 +23,7 @@ type Secstore struct {
 
 // Version returns the secstore version and algorithm, to be sent to the peer.
 func Version() string {
-	return fmt.Sprintf("%s\tPAK\n", VERSION)
+	return fmt.Sprintf("%s\tPAK\n", pak.VERSION)
 }
 
 // EncryptionKeys converts a session key to a pair of encryption keys, one for each direction.
@@ -64,7 +62,7 @@ func Dial(network, addr string) (*ssl.Conn, error) {
 // engages line encryption using the negotiated session key,
 // and returns the peer name and an optional demand for further
 // authentication. Currently the only demand is "need pin", which requires
-// SendPin to be applied to the connection to send the PIN.
+// SendPIN to be applied to the connection to send the PIN.
 // On successful return, the connection is ready to receive secstore commands.
 func Auth(conn *ssl.Conn, user string, pwhash []byte) (string, string, error) {
 	pk, err := pak.Client(conn, Version(), user, pwhash)
@@ -131,8 +129,8 @@ func Connect(network, addr string, user string, pwhash []byte) (*Secstore, strin
 	return &Secstore{conn: conn, Peer: sname}, diag, nil
 }
 
-// SendPin sends the remote the PIN it has demanded as an extra check.
-func (sec *Secstore) SendPin(pin string) error {
+// SendPIN sends the remote the PIN it has demanded as an extra check.
+func (sec *Secstore) SendPIN(pin string) error {
 	err := sio.WriteString(sec.conn, "STA"+pin)
 	if err != nil {
 		return fmt.Errorf("error writing pin: %w", err)
