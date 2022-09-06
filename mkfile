@@ -15,5 +15,6 @@ fmt:V:
 	for a in $TARG; do gofmt -s -l -w $a/*.go; done
 
 test:V:
-	go test -v ./secstore
+	go test ./internal/pak
 	go test ./internal/ssl
+	go test -v ./secstore
