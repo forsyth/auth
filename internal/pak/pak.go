@@ -1,4 +1,4 @@
-package secstore
+package pak
 
 import (
 	"crypto/hmac"
@@ -10,12 +10,16 @@ import (
 	"io"
 	"math/big"
 	"strings"
+
+	"github.com/forsyth/auth/internal/sio"
 )
 
 // note: this implementation uses many of the original names,
 // to keep it aligned with the Plan 9/Plan 9 port/Inferno implementations,
 //  but that leads to using hexX for an ascii version of X,
 // which is actually base64, not hex.
+
+const VERSION = "secstore"
 
 // PAK holds a negotiated session key and the name presented by the other party after negotiation.
 type PAK struct {
@@ -31,7 +35,6 @@ type PW struct {
 
 // UserManager manages a set of users.
 type UserManager interface {
-
 	// Look returns a PW value representing a given user, or an error if the user doesn't exist (or has expired).
 	Look(name string) (*PW, error)
 }
@@ -46,7 +49,7 @@ type pakParams struct {
 
 // from seed EB7B6E35F7CD37B511D96C67D6688CC4DD440E1E
 
-var pak = &pakParams{
+var pk = &pakParams{
 	q: mustHexToBig("E0F0EF284E10796C5A2A511E94748BA03C795C13"),
 	p: mustHexToBig("C41CFBE4D4846F67A3DF7DE9921A49D3B42DC33728427AB159CEC8CBB" +
 		"DB12B5F0C244F1A734AEB9840804EA3C25036AD1B61AFF3ABBC247CD4B384224567A86" +
@@ -73,7 +76,7 @@ func mustHexToBig(s string) *big.Int {
 
 // H = (sha(ver,C,sha(passphrase)))^r mod p,
 // a hash function expensive to attack by brute force.
-const Reps = 7
+const reps = 7
 
 func longhash(ver string, C string, passwd []byte) *big.Int {
 	aver := []byte(ver)
@@ -83,15 +86,15 @@ func longhash(ver string, C string, passwd []byte) *big.Int {
 	copy(Cp[len(aver):], aC)
 	copy(Cp[len(aver)+len(aC):], passwd)
 	buf := []byte{}
-	for i := 0; i < Reps; i++ {
+	for i := 0; i < reps; i++ {
 		key := []byte{byte('A' + i)}
 		buf = append(buf, hmac_sha1(Cp, key)...)
 	}
 	erasekey(Cp)
 	b := new(big.Int).SetBytes(buf)
 	h := new(big.Int)
-	h.Mod(b, pak.p)
-	h.Exp(h, pak.r, pak.p)
+	h.Mod(b, pk.p)
+	h.Exp(h, pk.r, pk.p)
 	return h
 }
 
@@ -113,12 +116,15 @@ func bigrand() (*big.Int, error) {
 	return new(big.Int).SetBytes(rbytes[:n]), nil
 }
 
+// PAKHi converts a client name and secret (in the clear)
+// into a hashed value augmented by a protocol version,
+// that obscures the secret.
 // Hi = H^-1 mod p
 func PAKHi(C string, pass []byte) (string, *big.Int, *big.Int) {
 	H := longhash(VERSION, C, pass)
 	Hi := new(big.Int)
-	Hi = Hi.ModInverse(H, pak.p)
-	return enc64(Hi.Bytes()), H, Hi
+	Hi = Hi.ModInverse(H, pk.p)
+	return sio.Enc64(Hi.Bytes()), H, Hi
 }
 
 // another, faster, hash function for each party to
@@ -149,15 +155,15 @@ func Client(conn io.ReadWriter, version string, C string, pass []byte) (*PAK, er
 	if err != nil {
 		return nil, err
 	}
-	x.Mod(x, pak.q)
+	x.Mod(x, pk.q)
 	if x.Cmp(big.NewInt(0)) == 0 {
 		x = big.NewInt(1)
 	}
-	m := new(big.Int).Set(pak.g)
-	m.Exp(m, x, pak.p)
+	m := new(big.Int).Set(pk.g)
+	m.Exp(m, x, pk.p)
 	m.Mul(m, H)
-	m.Mod(m, pak.p)
-	hexm := enc64(m.Bytes())
+	m.Mod(m, pk.p)
+	hexm := sio.Enc64(m.Bytes())
 
 	_, err = fmt.Fprintf(conn, "%sC=%s\nm=%s\n", version, C, hexm)
 	if err != nil {
@@ -165,40 +171,40 @@ func Client(conn io.ReadWriter, version string, C string, pass []byte) (*PAK, er
 	}
 
 	// recv g**y, S, check hash1(g**xy)
-	s, err := readString(conn)
+	s, err := sio.ReadString(conn)
 	if err != nil {
-		err = writeError(conn, "couldn't read g**y: "+err.Error())
+		err = sio.WriteError(conn, "couldn't read g**y: "+err.Error())
 		return nil, err
 	}
 	// should be: "mu=%s\nk=%s\nS=%s\n"
 	flds := strings.Split(s, "\n")
 	if len(flds) != 4 {
-		err = writeError(conn, "verifier syntax error")
+		err = sio.WriteError(conn, "verifier syntax error")
 		return nil, err
 	}
 	hexmu := ex("mu=", flds[0])
 	ks := ex("k=", flds[1])
 	S := ex("S=", flds[2])
 	if hexmu == "" || ks == "" || S == "" {
-		err = writeError(conn, "verifier syntax error")
+		err = sio.WriteError(conn, "verifier syntax error")
 		return nil, err
 	}
-	mu, err := dec64(hexmu)
+	mu, err := sio.Dec64(hexmu)
 	if err != nil {
 		return nil, err
 	}
-	sigma := new(big.Int).Exp(mu, x, pak.p)
-	hexsigma := enc64(sigma.Bytes())
+	sigma := new(big.Int).Exp(mu, x, pk.p)
+	hexsigma := sio.Enc64(sigma.Bytes())
 	digest := shorthash("server", C, S, hexm, hexmu, hexsigma, hexHi)
-	kc := enc64(digest)
+	kc := sio.Enc64(digest)
 	if ks != kc {
-		err = writeError(conn, "verifier didn't match")
+		err = sio.WriteError(conn, "verifier didn't match")
 		return nil, err
 	}
 
 	// send hash2(g**xy)
 	digest = shorthash("client", C, S, hexm, hexmu, hexsigma, hexHi)
-	kc = enc64(digest)
+	kc = sio.Enc64(digest)
 	_, err = fmt.Fprintf(conn, "k'=%s\n", kc)
 	if err != nil {
 		return nil, err
@@ -220,14 +226,14 @@ func Client(conn io.ReadWriter, version string, C string, pass []byte) (*PAK, er
 func Server(conn io.ReadWriter, version string, S string, users UserManager) (*PAK, *PW, error) {
 	var err error
 
-	mess, err := readString(conn)
+	mess, err := sio.ReadString(conn)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error reading first mesg: %w", err)
 	}
 
 	// prefix has application version and algorithm
 	if !strings.HasPrefix(mess, version) {
-		err = writeError(conn, "protocol should start with ver alg")
+		err = sio.WriteError(conn, "protocol should start with ver alg")
 		return nil, nil, err
 	}
 	mess = mess[len(version):]
@@ -235,76 +241,76 @@ func Server(conn io.ReadWriter, version string, S string, users UserManager) (*P
 	// parse rest of first message into C, m
 	flds := strings.Split(mess, "\n")
 	if len(flds) != 3 {
-		err = writeError(conn, "PAK version syntax (fields)")
+		err = sio.WriteError(conn, "PAK version syntax (fields)")
 		return nil, nil, err
 	}
 	C := ex("C=", flds[0])
 	hexm := ex("m=", flds[1])
 	if C == "" || hexm == "" {
-		err = writeError(conn, "PAK version syntax, C=, m=")
+		err = sio.WriteError(conn, "PAK version syntax, C=, m=")
 		return nil, nil, err
 	}
-	m, err := dec64(hexm)
+	m, err := sio.Dec64(hexm)
 	if err != nil {
-		err = writeError(conn, "PAK version syntax, m format")
+		err = sio.WriteError(conn, "PAK version syntax, m format")
 		return nil, nil, err
 	}
-	m.Mod(m, pak.p)
+	m.Mod(m, pk.p)
 
 	// lookup client user
 	pw, err := users.Look(C)
 	if err != nil {
-		err = writeError(conn, err.Error())
+		err = sio.WriteError(conn, err.Error())
 		return nil, pw, err
 	}
 	if m.Cmp(big.NewInt(0)) == 0 {
 		// this can be disabled in original secstore by making special FICTITIOUS account that is used by default
-		err = writeError(conn, "account exists")
+		err = sio.WriteError(conn, "account exists")
 		return nil, nil, err
 	}
-	hexHi := enc64(pw.Hi.Bytes())
+	hexHi := sio.Enc64(pw.Hi.Bytes())
 
 	// random y, mu=g**y, sigma=g**xy
 	y, err := bigrand()
 	if err != nil {
-		err = writeError(conn, "failed to generate random: "+err.Error())
+		err = sio.WriteError(conn, "failed to generate random: "+err.Error())
 		return nil, nil, err
 	}
-	y.Mod(y, pak.q)
+	y.Mod(y, pk.q)
 	if y.Cmp(big.NewInt(0)) == 0 {
 		y = big.NewInt(1)
 	}
-	mu := new(big.Int).Set(pak.g)
-	mu.Exp(mu, y, pak.p)
+	mu := new(big.Int).Set(pk.g)
+	mu.Exp(mu, y, pk.p)
 	m.Mul(m, pw.Hi)
-	m.Mod(m, pak.p)
-	sigma := new(big.Int).Exp(m, y, pak.p)
+	m.Mod(m, pk.p)
+	sigma := new(big.Int).Exp(m, y, pk.p)
 
 	// send g**y, hash1(g**xy)
-	hexmu := enc64(mu.Bytes())
-	hexsigma := enc64(sigma.Bytes())
+	hexmu := sio.Enc64(mu.Bytes())
+	hexsigma := sio.Enc64(sigma.Bytes())
 	digest := shorthash("server", C, S, hexm, hexmu, hexsigma, hexHi)
-	ks := enc64(digest)
+	ks := sio.Enc64(digest)
 	_, err = fmt.Fprintf(conn, "mu=%s\nk=%s\nS=%s\n", hexmu, ks, S)
 	if err != nil {
 		return nil, nil, fmt.Errorf("connection write error: %w", err)
 	}
 
 	// recv hash2(g**xy)
-	mess, err = readString(conn)
+	mess, err = sio.ReadString(conn)
 	if err != nil {
-		err = writeError(conn, "couldn't read verifier: "+err.Error())
+		err = sio.WriteError(conn, "couldn't read verifier: "+err.Error())
 		return nil, nil, err
 	}
 	kc := ex("k'=", strings.TrimRight(mess, "\n"))
 	if kc == "" {
-		err = writeError(conn, "verifier syntax error, k'=")
+		err = sio.WriteError(conn, "verifier syntax error, k'=")
 		return nil, nil, err
 	}
 	digest = shorthash("client", C, S, hexm, hexmu, hexsigma, hexHi)
-	ks = enc64(digest)
+	ks = sio.Enc64(digest)
 	if ks != kc {
-		err = writeError(conn, "verifier didn't match")
+		err = sio.WriteError(conn, "verifier didn't match")
 		return nil, nil, err
 	}
 
@@ -333,11 +339,11 @@ func hmac_sha1(buf []byte, key []byte) []byte {
 	return mac.Sum(nil)
 }
 
-func enc64(buf []byte) string {
+func Enc64(buf []byte) string {
 	return base64.StdEncoding.EncodeToString(buf)
 }
 
-func dec64(s string) (*big.Int, error) {
+func Dec64(s string) (*big.Int, error) {
 	a, err := base64.StdEncoding.DecodeString(s)
 	if err != nil {
 		return nil, err

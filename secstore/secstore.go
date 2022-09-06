@@ -3,15 +3,18 @@
 package secstore
 
 import (
+	"crypto/hmac"
 	"crypto/sha1"
 	"fmt"
 	"net"
 
+	"github.com/forsyth/auth/internal/pak"
+	"github.com/forsyth/auth/internal/sio"
 	"github.com/forsyth/auth/internal/ssl"
 )
 
 const MaxFileSize = 128 * 1024 // arbitrary default, same as Plan 9
-const MaxMsg = 4096
+const MaxMsg = ssl.MaxMsg
 
 const VERSION = "secstore"
 
@@ -44,7 +47,7 @@ func KeyHash(s string) []byte {
 	key := []byte(s)
 	state := sha1.New()
 	state.Write(key)
-	erasekey(key)
+	sio.EraseKey(key)
 	return state.Sum(nil)
 }
 
@@ -65,26 +68,26 @@ func Dial(network, addr string) (*ssl.Conn, error) {
 // SendPin to be applied to the connection to send the PIN.
 // On successful return, the connection is ready to receive secstore commands.
 func Auth(conn *ssl.Conn, user string, pwhash []byte) (string, string, error) {
-	pak, err := Client(conn, Version(), user, pwhash)
+	pk, err := pak.Client(conn, Version(), user, pwhash)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to authenticate: %w", err)
 	}
-	keys := EncryptionKeys(pak.Session, 0)
+	keys := EncryptionKeys(pk.Session, 0)
 	err = conn.StartCipher(keys[0], keys[1])
 	if err != nil {
-		return pak.Peer, "", fmt.Errorf("pushing SSL: %w", err)
+		return pk.Peer, "", fmt.Errorf("pushing SSL: %w", err)
 	}
-	s, err := readString(conn)
+	s, err := sio.ReadString(conn)
 	if err != nil {
-		return pak.Peer, "", fmt.Errorf("connection read error: %w", err)
+		return pk.Peer, "", fmt.Errorf("connection read error: %w", err)
 	}
 	if s == "STA" {
-		return pak.Peer, "need pin", nil
+		return pk.Peer, "need pin", nil
 	}
 	if s != "OK" {
-		return pak.Peer, "", fmt.Errorf("unexpected response: %q", s)
+		return pk.Peer, "", fmt.Errorf("unexpected response: %q", s)
 	}
-	return pak.Peer, "", nil
+	return pk.Peer, "", nil
 }
 
 // CanSecstore checks whether secstore exists at the remote, and has a given user.
@@ -99,7 +102,7 @@ func CanSecstore(network string, addr string, user string) error {
 		return fmt.Errorf("error writing version/alg: %w", err)
 	}
 	// a little strange, but the convention is a !message reply that readstr converts to an error
-	s, err := readString(conn)
+	s, err := sio.ReadString(conn)
 	if err == nil {
 		return fmt.Errorf("unexpected reply from secstore: %q", s)
 	}
@@ -127,11 +130,11 @@ func Connect(network, addr string, user string, pwhash []byte) (*Secstore, strin
 
 // SendPin sends the remote the PIN it has demanded as an extra check.
 func (sec *Secstore) SendPin(pin string) error {
-	err := writeString(sec.conn, "STA"+pin)
+	err := sio.WriteString(sec.conn, "STA"+pin)
 	if err != nil {
 		return fmt.Errorf("error writing pin: %w", err)
 	}
-	s, err := readString(sec.conn)
+	s, err := sio.ReadString(sec.conn)
 	if err != nil {
 		return fmt.Errorf("error reading pin reply: %w", err)
 	}
@@ -145,6 +148,12 @@ func (sec *Secstore) SendPin(pin string) error {
 // Errors are ignored as by now uninteresting. Note that if calling Bye causes Close to be called twice,
 // the effect is "undefined" by interface Closer, an annoying property.
 func (sec *Secstore) Bye() {
-	writeString(sec.conn, "BYE")
+	sio.WriteString(sec.conn, "BYE")
 	sec.conn.Close()
+}
+
+func hmac_sha1(buf []byte, key []byte) []byte {
+	mac := hmac.New(sha1.New, key)
+	mac.Write(buf)
+	return mac.Sum(nil)
 }

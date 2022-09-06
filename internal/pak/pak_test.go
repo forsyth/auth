@@ -1,4 +1,4 @@
-package secstore_test
+package pak_test
 
 import (
 	"bytes"

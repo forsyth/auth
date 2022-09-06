@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strconv"
 	"time"
+
+	"github.com/forsyth/auth/internal/sio"
 )
 
 // DirEntry describes a file stored by secstore.
@@ -48,7 +50,7 @@ func (sec *Secstore) Files() ([]DirEntry, error) {
 		i += 24 + 1                                  // start of hash
 		for j = i; j < len(s) && s[j] != '\n'; j++ { // end of hash
 		}
-		sha1, err := dec64(s[i:j])
+		sha1, err := sio.Dec64(s[i:j])
 		if err != nil {
 			sha1 = nil
 		}
@@ -72,7 +74,7 @@ func (sec *Secstore) GetFile(name string, maxsize uint64) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("can't write request: %w", err)
 	}
-	s, err := readString(sec.conn)
+	s, err := sio.ReadString(sec.conn)
 	if err != nil {
 		return nil, fmt.Errorf("can't get file: %w", err)
 	}
