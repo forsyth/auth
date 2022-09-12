@@ -26,6 +26,11 @@ func Version() string {
 	return fmt.Sprintf("%s\tPAK\n", pak.VERSION)
 }
 
+// Privacy enables whatever memory privacy mode the OS provides.
+func Privacy() {
+	// don't know yet
+}
+
 // EncryptionKeys converts a session key to a pair of encryption keys, one for each direction.
 func EncryptionKeys(sigma []byte, direction int) [2][]byte {
 	var secretin, secretout []byte
