@@ -21,19 +21,27 @@ var secstoreServer = getenv("TESTSERVER")
 var clientName = getenv("TESTUSER")
 
 func clientKey() []byte {
-	return secstore.KeyHash(getenv("TESTKEY"))
+	key := []byte(getenv("TESTKEY"))
+	defer secstore.EraseKey(key)
+	return secstore.KeyHash(key)
 }
 
 func clientFileKey() []byte {
-	return secstore.FileKey(getenv("TESTKEY"))
+	key := []byte(getenv("TESTKEY"))
+	defer secstore.EraseKey(key)
+	return secstore.FileKey(key)
 }
 
 func TestSecstore(t *testing.T) {
-	sec, _, err := secstore.Connect("tcp", secstoreServer, clientName, clientKey())
+	sec, err := secstore.Dial("tcp", secstoreServer)
 	if err != nil {
 		t.Fatalf("can't dial %s: %s", secstoreServer, err)
 	}
-	defer sec.Bye()
+	defer sec.Close()
+	err = sec.Auth(clientName, clientKey())
+	if err != nil {
+		t.Fatalf("can't authenticate as %s to %s: %s", clientName, secstoreServer, err)
+	}
 	t.Logf("connected to %s (%s) as %s", secstoreServer, sec.Peer, clientName)
 	files, err := sec.Files()
 	if err != nil {

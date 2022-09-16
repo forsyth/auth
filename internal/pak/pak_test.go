@@ -20,8 +20,8 @@ type result struct {
 
 const userName = "testuser"
 
-var pass = "truly sorry"
-var wrongpass = "nothing doing!"
+var pass = []byte("truly sorry")
+var wrongpass = []byte("nothing doing!")
 
 func TestPAK(t *testing.T) {
 	run(t, userName, pass, true)
@@ -29,7 +29,7 @@ func TestPAK(t *testing.T) {
 	run(t, userName, wrongpass, false)
 }
 
-func run(t *testing.T, name string, pass string, passes bool) {
+func run(t *testing.T, name string, pass []byte, passes bool) {
 	f0, f1 := net.Pipe()
 	wait := make(chan result, 2)
 	go server(f0, t, wait)
@@ -86,14 +86,14 @@ func (us users) Look(name string) (*pak.PW, error) {
 	return &pak.PW{Key: u, Hi: u.hi}, nil
 }
 
-func server(conn net.Conn, t *testing.T, wait chan result) {
+func server(conn net.Conn, t *testing.T, wait chan<- result) {
 	defer conn.Close()
 	userset := NewUsers()
 	pk, pw, err := pak.Server(conn, secstore.Version(), "devious", userset)
 	wait <- result{"server", pk, pw, err}
 }
 
-func client(conn net.Conn, t *testing.T, name string, pass []byte, wait chan result) {
+func client(conn net.Conn, t *testing.T, name string, pass []byte, wait chan<- result) {
 	defer conn.Close()
 	pk, err := pak.Client(conn, secstore.Version(), name, pass)
 	wait <- result{"client", pk, nil, err}

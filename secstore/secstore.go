@@ -3,7 +3,7 @@
 package secstore
 
 import (
-	"crypto/sha1"
+	"errors"
 	"fmt"
 	"net"
 
@@ -14,11 +14,28 @@ import (
 
 const MaxFileSize = 128 * 1024 // arbitrary default, same as Plan 9
 const MaxMsg = ssl.MaxMsg
+const Port = "5356"
+
+var (
+	ErrNoAuth = errors.New("connection not suitable for authentication")
+)
+
+// connState is the connection state
+type connState int
+
+const (
+	connected connState = iota // connected, with SSL pushed
+	broken                     // failed authentication
+	ready                      // successfully authenticated, ready for use
+	closed                     // closed (to prevent two calls to network Close)
+)
 
 // Secstore provides a set of operations on a remote secstore.
 type Secstore struct {
-	conn net.Conn
-	Peer string
+	conn    *ssl.Conn
+	Peer    string    // name asserted by other side
+	NeedPIN bool      // must obtain and send 2FA
+	state   connState // avoid calling conn.Close twice
 }
 
 // Version returns the secstore version and algorithm, to be sent to the peer.
@@ -31,80 +48,71 @@ func Privacy() {
 	// don't know yet
 }
 
-// EncryptionKeys converts a session key to a pair of encryption keys, one for each direction.
-func EncryptionKeys(sigma []byte, direction int) [2][]byte {
-	var secretin, secretout []byte
-	if direction != 0 {
-		secretout = sio.HMAC(sha1.New, sigma, []byte("one"))
-		secretin = sio.HMAC(sha1.New, sigma, []byte("two"))
-	} else {
-		secretout = sio.HMAC(sha1.New, sigma, []byte("two"))
-		secretin = sio.HMAC(sha1.New, sigma, []byte("one"))
-	}
-	return [2][]byte{secretin, secretout}
-}
-
-// KeyHash return the SHA1 hash of a password.
-func KeyHash(s string) []byte {
-	key := []byte(s)
-	state := sha1.New()
-	state.Write(key)
-	sio.EraseKey(key)
-	return state.Sum(nil)
-}
-
 // Dial connects to the secstore at the given network address,
-// pushes an SSL instance (initially in clear), and returns the resulting connection.
-func Dial(network, addr string) (*ssl.Conn, error) {
+// pushes an SSL instance (initially in clear), and returns the resulting connection,
+// which must be authenticated before use (see the Auth method).
+func Dial(network, addr string) (*Secstore, error) {
 	conn, err := net.Dial(network, addr)
 	if err != nil {
 		return nil, err
 	}
-	return ssl.Client(conn), nil
+	return &Secstore{conn: ssl.Client(conn), Peer: "", NeedPIN: false, state: connected}, nil
 }
 
-// Auth authenticates the connection for the given user and password hash,
+// Auth authenticates the Secstore connection for the given user and password hash,
 // engages line encryption using the negotiated session key,
-// and returns the peer name and an optional demand for further
-// authentication. Currently the only demand is "need pin", which requires
-// SendPIN to be applied to the connection to send the PIN.
-// On successful return, the connection is ready to receive secstore commands.
-func Auth(conn *ssl.Conn, user string, pwhash []byte) (string, string, error) {
-	pk, err := pak.Client(conn, Version(), user, pwhash)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to authenticate: %w", err)
+// setting the peer name and an optional demand for further
+// authentication (Secstore.NeedPIN), which if true requires
+// the SendPIN method to be invoked to provide the PIN.
+// The connection can then be used for secstore commands, typically via Files, GetFile, PutFIle etc.
+// Connect also returns the remote server's name for itself, as exchanged using the
+// key-exchange protocol, typically just "secstore".
+// If the Secstore.NeedPIN is true, the caller must get the extra authentication value
+// and provide it using SendPIN.
+func (sec *Secstore) Auth(user string, pwhash []byte) error {
+	if sec.state != connected {
+		return ErrNoAuth
 	}
+	sec.state = broken
+	pk, err := pak.Client(sec.conn, Version(), user, pwhash)
+	if err != nil {
+		return fmt.Errorf("failed to authenticate: %w", err)
+	}
+	sec.Peer = pk.Peer
 	keys := EncryptionKeys(pk.Session, 0)
-	err = conn.StartCipher(keys[0], keys[1])
+	err = sec.conn.StartCipher(keys[0], keys[1])
 	if err != nil {
-		return pk.Peer, "", fmt.Errorf("pushing SSL: %w", err)
+		return fmt.Errorf("pushing SSL: %w", err)
 	}
-	s, err := sio.ReadString(conn)
+	s, err := sio.ReadString(sec.conn)
 	if err != nil {
-		return pk.Peer, "", fmt.Errorf("connection read error: %w", err)
+		return fmt.Errorf("connection read error: %w", err)
 	}
 	if s == "STA" {
-		return pk.Peer, "need pin", nil
+		sec.state = ready
+		sec.NeedPIN = true
+		return nil
 	}
 	if s != "OK" {
-		return pk.Peer, "", fmt.Errorf("unexpected response: %q", s)
+		return fmt.Errorf("unexpected response: %q", s)
 	}
-	return pk.Peer, "", nil
+	sec.state = ready
+	return nil
 }
 
 // CanSecstore checks whether secstore exists at the remote, and has a given user.
 // The remote might sensibly be configured not to reveal whether a user exists or not.
 func CanSecstore(network string, addr string, user string) error {
-	conn, err := Dial(network, addr)
+	sec, err := Dial(network, addr)
 	if err != nil {
 		return fmt.Errorf("dial failed: %w", err)
 	}
-	_, err = fmt.Fprintf(conn, "%s\nC=%s\nm=0\n", Version(), user)
+	_, err = fmt.Fprintf(sec.conn, "%s\nC=%s\nm=0\n", Version(), user)
 	if err != nil {
 		return fmt.Errorf("error writing version/alg: %w", err)
 	}
 	// a little strange, but the convention is a !message reply that readstr converts to an error
-	s, err := sio.ReadString(conn)
+	s, err := sio.ReadString(sec.conn)
 	if err == nil {
 		return fmt.Errorf("unexpected reply from secstore: %q", s)
 	}
@@ -112,26 +120,6 @@ func CanSecstore(network string, addr string, user string) error {
 		return fmt.Errorf("error from secstore: %w", err)
 	}
 	return nil
-}
-
-// Connect connects to a secstore service at the given network and address, and
-// returns (conn, sname, diag, err). On success,
-// the connection is authenticated to the given user, using the password as hashed by KeyHash.
-// The connection can then be used for secstore commands, typically via Files, GetFile, PutFIle etc.
-// Connect also returns the remote server's name for itself, as exchanged using the
-// key-exchange protocol, typically just "secstore". If diag is not "", it contains a demand
-// for an extra level of authentication, currently only "need pin". See Auth for what to do.
-func Connect(network, addr string, user string, pwhash []byte) (*Secstore, string, error) {
-	conn, err := Dial(network, addr)
-	if err != nil {
-		return nil, "", err
-	}
-	sname, diag, err := Auth(conn, user, pwhash)
-	if err != nil {
-		conn.Close()
-		return nil, "", err
-	}
-	return &Secstore{conn: conn, Peer: sname}, diag, nil
 }
 
 // SendPIN sends the remote the PIN it has demanded as an extra check.
@@ -150,10 +138,14 @@ func (sec *Secstore) SendPIN(pin string) error {
 	return nil
 }
 
-// Bye writes a closing message to attempt a graceful close, and closes the connection.
-// Errors are ignored as by now uninteresting. Note that if calling Bye causes Close to be called twice,
-// the effect is "undefined" by interface Closer, an annoying property.
-func (sec *Secstore) Bye() {
+// Close writes a closing message to attempt a graceful close, and closes the underlying connection.
+// Errors are ignored as by now uninteresting. Close ensures the underlying connection is not
+// closed twice, since that's "undefined" by interface Closer (an annoying property).
+func (sec *Secstore) Close() {
+	if sec.state == closed {
+		return
+	}
 	sio.WriteString(sec.conn, "BYE")
 	sec.conn.Close()
+	sec.state = closed
 }

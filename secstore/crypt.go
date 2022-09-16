@@ -19,16 +19,39 @@ var (
 	ErrDecrypt      = errors.New("file did not decrypt correctly") // should only be wrong key
 )
 
+// EraseKey zeroes the bytes of a key, removing it from casual memory viewing.
+func EraseKey(key []byte) {
+	sio.EraseKey(key)
+}
+
 // FileKey converts a secret s into a secstore file key, hiding the text of the key.
-func FileKey(s string) []byte {
-	key := []byte(s)
+func FileKey(key []byte) []byte {
 	sha := sha1.New()
 	sha.Write([]byte("aescbc file"))
 	sha.Write(key)
 	skey := sha.Sum(nil)
-	sio.EraseKey(key)
 	sio.EraseKey(skey[aes.BlockSize:])
 	return skey[0:aes.BlockSize:aes.BlockSize]
+}
+
+// EncryptionKeys converts a session key to a pair of encryption keys, one for each direction.
+func EncryptionKeys(sigma []byte, direction int) [2][]byte {
+	var secretin, secretout []byte
+	if direction != 0 {
+		secretout = sio.HMAC(sha1.New, sigma, []byte("one"))
+		secretin = sio.HMAC(sha1.New, sigma, []byte("two"))
+	} else {
+		secretout = sio.HMAC(sha1.New, sigma, []byte("two"))
+		secretin = sio.HMAC(sha1.New, sigma, []byte("one"))
+	}
+	return [2][]byte{secretin, secretout}
+}
+
+// KeyHash return the SHA1 hash of a password.
+func KeyHash(key []byte) []byte {
+	state := sha1.New()
+	state.Write(key)
+	return state.Sum(nil)
 }
 
 // Decrypt decrypts the bytes read from a file, using the given key (the result of FileKey), returning the decoded bytes or an error.

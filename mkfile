@@ -6,6 +6,7 @@ TARG=\
 	./internal/pak \
 	./internal/sio \
 	./internal/ssl \
+	./cmd/secfiles \
 
 all:V:
 	for a in $TARG; do go build $a; done

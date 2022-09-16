@@ -5,7 +5,7 @@ import (
 	"hash"
 )
 
-// EraseKey removes a key from casual memory viewing.
+// EraseKey zeroes the bytes of a key, removing it from casual memory viewing.
 // It mattered more in Plan 9 and Inferno because allocated
 // arrays weren't guaranteed to be zero (unless mallocz was used),
 // and if they reused space from a key, might accidentally leak the value.

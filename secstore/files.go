@@ -83,14 +83,18 @@ func (sec *Secstore) GetFile(name string, maxsize uint64) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("secstore sent invalid file size: %q (%w)", s, err)
 	}
-	// strange convention, given available !error syntax
-	switch {
-	case nb == -1:
-		return nil, fmt.Errorf("remote file %q does not exist", name)
-	case nb == -3 || uint64(nb) > maxsize:
-		return nil, fmt.Errorf("implausible file size %d for %q", nb, name)
-	case nb < 0:
-		return nil, fmt.Errorf("GET refused for %q", name)
+	// strange convention, given available !error syntax.
+	// secstored sends !operation failed as well.
+	if nb < 0 {
+		_, err = sio.ReadString(sec.conn) // discard "operation failed"
+		switch {
+		case nb == -1:
+			return nil, fmt.Errorf("remote file %q does not exist", name)
+		case nb == -3 || uint64(nb) > maxsize:
+			return nil, fmt.Errorf("implausible file size %d for %q", nb, name)
+		default:
+			return nil, fmt.Errorf("GET refused for %q", name)
+		}
 	}
 	file := make([]byte, nb)
 	for nr := int64(0); nr < nb; {
