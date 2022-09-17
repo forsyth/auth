@@ -29,7 +29,8 @@ The key can be given by the **SECSTOREKEY** environment variable.
 
 The *secstore* service stores a set of encrypted files. They are encrypted and decrypted only on the client.
 The user's key is not stored on the server.
-The typical use with Plan 9 is to store a set of keys to be loaded into an instance of *factotum*(4).
+Files are exchanged (in encrypted form) using a special protocol on a separately encrypted connection.
+The typical use with Plan 9 is to store a file of keys to be loaded into an instance of *factotum*(4).
 
 The service allows only simple file names.
 If a path is given, *secfiles* uses the base name as the file name on *secstore*.
@@ -46,3 +47,12 @@ The test for package secstore uses three environment variables:
 The test reads and decrypts any files stored by **$TESTUSER**,
 and re-encrypts them locally to test encryption.
 It also writes a short verse to the file **mary** on the service, then removes it.
+
+## Bugs and restrictions
+The *secstore* protocol does not handle errors consistently.
+It uses an unorthodox version of cipher-block-chaining for AESCBC, retained here for compatibility,
+but limited to an internal package so it doesn't escape further.
+Because of its age, it uses SHA1 in various ways, but they should be safe in this application.
+It also uses the record format of SSL, but nothing else of that protocol.
+In particular, the authentication protocol is completely different.
+Again, there's an internal version for compatibility.
