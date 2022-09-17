@@ -30,7 +30,7 @@ The secstore user name defaults to the current user name.
 The server can also be given by the **SECSTORE** environment variable.
 The key can be given by the **SECSTOREKEY** environment variable.
 
-##Test conventions##
+## Test conventions
 The test for package secstore uses three environment variables:
 
 **TESTSERVER** the server name and port  
@@ -39,4 +39,4 @@ The test for package secstore uses three environment variables:
 
 The test reads and decrypts any files stored by **$TESTUSER**,
 and re-encrypts them locally to test encryption.
-It also writes a short verse to the file **mary** on the service.
+It also writes a short verse to the file **mary** on the service, then removes it.
