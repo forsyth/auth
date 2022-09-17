@@ -54,6 +54,7 @@ func TestSecstore(t *testing.T) {
 	key := clientFileKey()
 	testFileGet(t, sec, files, key)
 	testFilePut(t, sec, key)
+	testRemove(t, sec)
 }
 
 func testFileGet(t *testing.T, sec *secstore.Secstore, files []secstore.DirEntry, key []byte) {
@@ -105,6 +106,8 @@ func testEncrypt(data []byte, key []byte) ([]byte, error) {
 	return encdata, nil
 }
 
+const mary = "marylamb"	// unlikely to exist
+
 func testFilePut(t *testing.T, sec *secstore.Secstore, key []byte) {
 	file := []byte("mary had a little lamb\nits fleece was white as snow\nand everywhere that mary went\nthe lamb was sure to go\n")
 	data, err := secstore.Encrypt(file, key)
@@ -112,12 +115,29 @@ func testFilePut(t *testing.T, sec *secstore.Secstore, key []byte) {
 		t.Errorf("failed to encrypt: %s", err)
 		return
 	}
-	err = sec.PutFile("mary", data)
+	err = sec.PutFile(mary, data)
 	if err != nil {
-		t.Errorf("failed to put 'mary': %s", err)
+		t.Errorf("failed to put '%s': %s", mary, err)
 		return
 	}
-	t.Logf("put file 'mary'")
+	t.Logf("put file '%s'", mary)
+}
+
+func testRemove(t *testing.T, sec *secstore.Secstore) {
+// the secstored protocol doesn't include an ack, only a nak
+// and that's only visible on next read, which can't be done
+// safely since there's no ack message...
+//	err := sec.Remove("$nothing$doing$$")
+//	if err == nil {
+//		t.Errorf("failed to diagnose Remove of non-existent file")
+//		return
+//	}
+	err := sec.Remove(mary)
+	if err != nil {
+		t.Errorf("failed to remove %s: %s", mary, err)
+		return
+	}
+	t.Logf("removed %s", mary)
 }
 
 func eq(a, b []byte) bool {
