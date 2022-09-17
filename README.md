@@ -15,6 +15,7 @@ The verbs d, r, p t, x are similar to those of ar(1) or tar(1):
 	x extract
 The optional v modifier adds detail.
 The verb p prints the file one line at a time, as required by the factotum control file.
+Files are extracted with mode 600.
 (The interface is different from the Plan 9 auth/secstore command, being closer to Inferno's version.)
 The service allows only simple file names. If a path is given, secfiles uses the base name as the file name on secstore.
 The -s option gives the server name and port (default port: 5356).
