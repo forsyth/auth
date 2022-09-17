@@ -106,7 +106,7 @@ func testEncrypt(data []byte, key []byte) ([]byte, error) {
 	return encdata, nil
 }
 
-const mary = "marylamb"	// unlikely to exist
+const mary = "marylamb" // unlikely to exist
 
 func testFilePut(t *testing.T, sec *secstore.Secstore, key []byte) {
 	file := []byte("mary had a little lamb\nits fleece was white as snow\nand everywhere that mary went\nthe lamb was sure to go\n")
@@ -124,14 +124,14 @@ func testFilePut(t *testing.T, sec *secstore.Secstore, key []byte) {
 }
 
 func testRemove(t *testing.T, sec *secstore.Secstore) {
-// the secstored protocol doesn't include an ack, only a nak
-// and that's only visible on next read, which can't be done
-// safely since there's no ack message...
-//	err := sec.Remove("$nothing$doing$$")
-//	if err == nil {
-//		t.Errorf("failed to diagnose Remove of non-existent file")
-//		return
-//	}
+	// the secstored protocol doesn't include an ack, only a nak
+	// and that's only visible on next read, which can't be done
+	// safely since there's no ack message...
+	//	err := sec.Remove("$nothing$doing$$")
+	//	if err == nil {
+	//		t.Errorf("failed to diagnose Remove of non-existent file")
+	//		return
+	//	}
 	err := sec.Remove(mary)
 	if err != nil {
 		t.Errorf("failed to remove %s: %s", mary, err)
