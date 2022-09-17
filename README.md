@@ -13,11 +13,11 @@ files stored in a Plan 9 secstore service.
 
 The verbs **d**, **r**, **p**, **t** and **x** are similar to those of *ar*(1) or *tar*(1):
 
-	**d** delete
-	**r** replace (store or update)
-	**p** print to standard output
-	**t** table
-	**x** extract
+**d** delete  
+**r** replace (store or update)  
+**p** print to standard output  
+**t** table  
+**x** extract  
 
 The optional **v** modifier adds detail.
 The verb **p** prints the file one line at a time, as required by the factotum control file.
