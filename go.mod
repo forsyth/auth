@@ -1,6 +1,6 @@
 module github.com/forsyth/auth
 
-go 1.18
+go 1.26
 
 require (
 	golang.org/x/sys v0.0.0-20220908164124-27713097b956 // indirect
