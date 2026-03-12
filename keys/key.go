@@ -59,22 +59,6 @@ func (k *Key) FindAttrVal(name string) (string, bool) {
 	return k.Visible.FindAttrVal(name)
 }
 
-// PK has only public key parts.
-type PK *Key
-
-// SK is a secret (private) key, which might have public key values too.
-type SK *Key
-
-// Public returns the public part of a key pair as a new Key.
-func (k *Key) Public() PK {
-	return &Key{ Proto: k.Proto, Visible: k.Visible, Secret: make(Attrs, 0)}
-}
-
-// Private returns a key as a secret (private) key.
-func (k *Key) Private() SK {
-	return &Key{ Proto: k.Proto, Visible: k.Private, Secret: k.Secret }
-}
-
 // String returns the key in textual form but stripping the values from the secret attributes,
 // leaving queries instead.
 func (k *Key) String() string {
