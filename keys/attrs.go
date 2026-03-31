@@ -65,6 +65,17 @@ func (a *Attr) IsPublic() bool {
 	return !a.IsSecret()
 }
 
+// Less sorts keys in alphabetical order, but secrets are kept at the back.
+func (a *Attr) Less(b *Attr) bool {
+	if a.IsSecret() && !b.IsSecret() {
+		return false
+	}
+	if !a.IsSecret() && b.IsSecret() {
+		return true
+	}
+	return a.Name < b.Name
+}
+
 // Attrs represents a set of attributes.
 type Attrs []*Attr
 
@@ -97,18 +108,37 @@ func ParseAttrs(s string) (Attrs, error) {
 	}), nil
 }
 
-// Less sorts keys in alphabetical order, but secrets are kept at the back.
-func (a *Attr) Less(b *Attr) bool {
-	if a.IsSecret() && !b.IsSecret() {
-		return false
+func (as Attrs) stringTo(sb *strings.Builder, hide bool) {
+	for _, a := range as {
+		if sb.Len() != 0 {
+			sb.WriteByte(' ')
+		}
+		if hide && a.IsSecret() {
+			sb.WriteString(a.Name)
+			sb.WriteByte('?')
+		} else {
+			sb.WriteString(a.String())
+		}
 	}
-	if !a.IsSecret() && b.IsSecret() {
-		return true
-	}
-	return a.Name < b.Name
 }
 
-// FindAttrVal returns the first attribute with the given name,
+// String returns the attributes in textual form,
+// stripping the values from the secret ones,leaving queries instead.
+func (as Attrs) String() string {
+	var sb strings.Builder
+	as.stringTo(&sb, true)
+	return sb.String()
+}
+
+// SecretString returns the attributes in textual form, leaving the secret values visible.
+// Obviously this must be used with care.
+func (as Attrs) SecretString() string {
+	var sb strings.Builder
+	as.stringTo(&sb, false)
+	return sb.String()
+}
+
+// FindAttr returns the first attribute with the given name,
 // or nil if nothing matches.
 func (as Attrs) FindAttr(name string) *Attr {
 	for _, a := range as {
@@ -122,10 +152,10 @@ func (as Attrs) FindAttr(name string) *Attr {
 // FindAttrVal returns the value of the first attribute with the given name.
 func (as Attrs) FindAttrVal(name string) (string, bool) {
 	a := as.FindAttr(name)
-	if a != nil {
-		return a.Val, true
+	if a == nil || a.Tag != Valued {
+		return "", false
 	}
-	return "", false
+	return a.Val, true
 }
 
 // AnyAttr returns true if name matches any name=value in the given set.

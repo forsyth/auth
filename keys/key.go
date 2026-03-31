@@ -66,40 +66,19 @@ func (k *Key) String() string {
 		return "nil"
 	}
 	var sb strings.Builder
-	for _, va := range k.Visible {
-		if sb.Len() != 0 {
-			sb.WriteByte(' ')
-		}
-		sb.WriteString(va.String())
-	}
-	for _, sa := range k.Secret {
-		if sb.Len() != 0 {
-			sb.WriteByte(' ')
-		}
-		sb.WriteString(sa.Name)
-		sb.WriteByte('?')
-	}
+	k.Visible.stringTo(&sb, true)
+	k.Secret.stringTo(&sb, true)
 	return sb.String()
 }
 
-// GoString returns the full text for a key including the values of secret attributes. NOT TO BE USED LIGHTLY.
-func (k *Key) GoString() string {
+// SecretString returns the full text for a key including the values of secret attributes.
+func (k *Key) SecretString() string {
 	if k == nil {
 		return "nil"
 	}
 	var sb strings.Builder
-	for _, va := range k.Visible {
-		if sb.Len() != 0 {
-			sb.WriteByte(' ')
-		}
-		sb.WriteString(va.String())
-	}
-	for _, sa := range k.Secret {
-		if sb.Len() != 0 {
-			sb.WriteByte(' ')
-		}
-		sb.WriteString(sa.String())
-	}
+	k.Visible.stringTo(&sb, false)
+	k.Secret.stringTo(&sb, false)
 	return sb.String()
 }
 
