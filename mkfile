@@ -1,11 +1,13 @@
 SHELL=/bin/rc
 
 TARG=\
+	./authsrv \
 	./secstore \
 	./internal/cbc \
 	./internal/pak \
 	./internal/sio \
 	./internal/ssl \
+	./cmd/netkey \
 	./cmd/secfiles \
 
 all:V:
