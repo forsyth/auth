@@ -5,6 +5,7 @@
 *.so
 *.dylib
 secfiles
+netkey
 
 # Test binary, built with `go test -c`
 *.test
