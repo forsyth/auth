@@ -20,6 +20,9 @@ import (
 	"strconv"
 )
 
+// The Plan 9 services use strings and slices that have a maximum length.
+// Strings are converted to NUL-terminated byte arrays, where the length
+// includes the NUL byte.
 const (
 	ANAMELEN  = 28 // maximum size of name in previous proto
 	AERRLEN   = 64 // maximum size of errstr in previous proto
@@ -30,32 +33,35 @@ const (
 	SECRETLEN = 32 // max length of a Secret
 )
 
-// encryption numberings (anti-replay)
-const (
-	AuthTreq   = 1  // ticket request
-	AuthChal   = 2  // challenge box request
-	AuthPass   = 3  // change password
-	AuthOK     = 4  // fixed length reply follows
-	AuthErr    = 5  // error follows
-	AuthMod    = 6  // modify user
-	AuthApop   = 7  // apop authentication for pop3
-	AuthOKvar  = 9  // variable length reply follows
-	AuthChap   = 10 // chap authentication for ppp
-	AuthMSchap = 11 // MS chap authentication for ppp
-	AuthCram   = 12 // CRAM verification for IMAP (RFC2195 & rfc2104)
-	AuthHttp   = 13 // http domain login
-	AuthVNC    = 14 // VNC server login (deprecated)
+// ReqType gives the source of a request or reply: Plan 9's encryption numberings (anti-replay).
+type ReqType byte
 
-	AuthTs = 64 // ticket encrypted with server's Key
-	AuthTc = 65 // ticket encrypted with client's Key
-	AuthAs = 66 // server generated authenticator
-	AuthAc = 67 // client generated authenticator
-	AuthTp = 68 // ticket encrypted with client's Key for password change
-	AuthHr = 69 // http reply
+const (
+	AuthTreq   ReqType = 1  // ticket request
+	AuthChal   ReqType = 2  // challenge box request
+	AuthPass   ReqType = 3  // change password
+	AuthOK     ReqType = 4  // fixed length reply follows
+	AuthErr    ReqType = 5  // error follows
+	AuthMod    ReqType = 6  // modify user
+	AuthApop   ReqType = 7  // apop authentication for pop3
+	AuthOKvar  ReqType = 9  // variable length reply follows
+	AuthChap   ReqType = 10 // chap authentication for ppp
+	AuthMSchap ReqType = 11 // MS chap authentication for ppp
+	AuthCram   ReqType = 12 // CRAM verification for IMAP (RFC2195 & rfc2104)
+	AuthHttp   ReqType = 13 // http domain login
+	AuthVNC    ReqType = 14 // VNC server login (deprecated)
+
+	AuthTs ReqType = 64 // ticket encrypted with server's Key
+	AuthTc ReqType = 65 // ticket encrypted with client's Key
+	AuthAs ReqType = 66 // server generated authenticator
+	AuthAc ReqType = 67 // client generated authenticator
+	AuthTp ReqType = 68 // ticket encrypted with client's Key for password change
+	AuthHr ReqType = 69 // http reply
 )
 
+// TicketReq requests a ticket from the authentication server.
 type TicketReq struct {
-	RType   byte
+	RType   ReqType
 	AuthID  string // [ANAMELEN]	server's encryption ID
 	AuthDom string // [DOMLEN]	server's authentication domain
 	Chal    []byte // [CHALLEN]	challenge from server
@@ -63,34 +69,46 @@ type TicketReq struct {
 	UID     string // [ANAMELEN]	UID of requesting user on host
 }
 
+// TICKREQLEN is the size in bytes of a packed TicketReq.
 const TICKREQLEN = 3*ANAMELEN + CHALLEN + DOMLEN + 1
 
+// Ticket is the result of a successful ticket request.
 type Ticket struct {
-	Num      byte   // replay protection
-	Chal     []byte // [CHALLEN] server challenge
-	ClientID string // [ANAMELEN]	UID on client
-	ServerID string // [ANAMELEN]	UID on server
-	Key      []byte // [DESKEYLEN]	nonce DES Key
+	Num      ReqType // replay protection
+	Chal     []byte  // [CHALLEN] server challenge
+	ClientID string  // [ANAMELEN]	UID on client
+	ServerID string  // [ANAMELEN]	UID on server
+	Key      []byte  // [DESKEYLEN]	nonce DES Key
 }
 
+// TICKETLEN is the size in bytes of a packed Ticket.
 const TICKETLEN = CHALLEN + 2*ANAMELEN + DESKEYLEN + 1
 
+// Authenicator carries the challenge to another party.
 type Authenticator struct {
-	Num  byte   // replay protection
-	Chal []byte // [CHALLEN] server challenge
-	ID   uint32 // authenticator ID , ++'d with each auth
+	Num  ReqType // replay protection
+	Chal []byte  // [CHALLEN] server challenge
+	ID   uint32  // authenticator ID , ++'d with each auth
 }
 
+// AUTHENTLEN is the size in bytes of a packed Authenticator.
 const AUTHENTLEN = CHALLEN + 4 + 1
 
+// PasswordReq is a password change request.
+// Old and New are the plaintext versions of the old and new passwords.
+// ChangeSecret is non-zero if another secret stored by the authentication
+// server (the POP3 or Inferno secret) should be changed as well or instead.
+// The server does not store Old or New: instead it converts both using
+// PassToKey and compares or stores the results.
 type PasswordReq struct {
-	Num          byte
+	Num          ReqType
 	Old          []byte // [ANAMELEN]
 	New          []byte // [ANAMELEN]
 	ChangeSecret byte
 	Secret       []byte // [SECRETLEN] new secret
 }
 
+// PASSREQLEN is the size in bytes of a packed PasswordReq.
 const PASSREQLEN = 2*ANAMELEN + 1 + 1 + SECRETLEN
 
 func put4(a []byte, v uint32) {
@@ -105,7 +123,7 @@ func puts(a []byte, s string, n int) {
 	b := []byte(s)
 	l := len(b)
 	if l >= n {
-		b = b[0: n]
+		b = b[0:n]
 		l = n - 1
 	}
 	copy(a, b)
@@ -140,7 +158,7 @@ func puta(a []byte, src []byte, n int) {
 // The optional key is used to encrypt the result first.
 func (f *Authenticator) Pack(key []byte) []byte {
 	p := make([]byte, AUTHENTLEN)
-	p[0] = f.Num
+	p[0] = byte(f.Num)
 	puta(p[1:], f.Chal, CHALLEN)
 	put4(p[1+CHALLEN:], f.ID)
 	if key != nil {
@@ -159,7 +177,7 @@ func UnpackAuthenticator(a []byte, key []byte) (*Authenticator, int, error) {
 		decrypt(key, a, AUTHENTLEN)
 	}
 	f := new(Authenticator)
-	f.Num = a[0]
+	f.Num = ReqType(a[0])
 	f.Chal = geta(a[1:], CHALLEN)
 	f.ID = get4(a[1+CHALLEN:])
 	return f, AUTHENTLEN, nil
@@ -169,7 +187,7 @@ func UnpackAuthenticator(a []byte, key []byte) (*Authenticator, int, error) {
 // The optional key is used to encrypt the result first.
 func (f *PasswordReq) Pack(key []byte) []byte {
 	a := make([]byte, PASSREQLEN)
-	a[0] = f.Num
+	a[0] = byte(f.Num)
 	puta(a[1:], f.Old, ANAMELEN)
 	puta(a[1+ANAMELEN:], f.New, ANAMELEN)
 	a[1+2*ANAMELEN] = f.ChangeSecret
@@ -190,7 +208,7 @@ func UnpackPasswordReq(a []byte, key []byte) (*PasswordReq, int, error) {
 		decrypt(key, a, PASSREQLEN)
 	}
 	f := new(PasswordReq)
-	f.Num = a[0]
+	f.Num = ReqType(a[0])
 	f.Old = geta(a[1:], ANAMELEN)
 	f.Old[ANAMELEN-1] = 0
 	f.New = geta(a[1+ANAMELEN:], ANAMELEN)
@@ -205,7 +223,7 @@ func UnpackPasswordReq(a []byte, key []byte) (*PasswordReq, int, error) {
 // The optional key is used to encrypt the result first.
 func (f *Ticket) Pack(key []byte) []byte {
 	a := make([]byte, TICKETLEN)
-	a[0] = f.Num
+	a[0] = byte(f.Num)
 	puta(a[1:], f.Chal, CHALLEN)
 	puts(a[1+CHALLEN:], f.ClientID, ANAMELEN)
 	puts(a[1+CHALLEN+ANAMELEN:], f.ServerID, ANAMELEN)
@@ -226,7 +244,7 @@ func UnpackTicket(a []byte, key []byte) (*Ticket, int, error) {
 		decrypt(key, a, TICKETLEN)
 	}
 	f := new(Ticket)
-	f.Num = a[0]
+	f.Num = ReqType(a[0])
 	f.Chal = geta(a[1:], CHALLEN)
 	f.ClientID = gets(a[1+CHALLEN:], ANAMELEN)
 	f.ServerID = gets(a[1+CHALLEN+ANAMELEN:], ANAMELEN)
@@ -237,7 +255,7 @@ func UnpackTicket(a []byte, key []byte) (*Ticket, int, error) {
 // Pack returns the wire form of a ticket request.
 func (f *TicketReq) Pack() []byte {
 	a := make([]byte, TICKREQLEN)
-	a[0] = f.RType
+	a[0] = byte(f.RType)
 	puts(a[1:], f.AuthID, ANAMELEN)
 	puts(a[1+ANAMELEN:], f.AuthDom, DOMLEN)
 	puta(a[1+ANAMELEN+DOMLEN:], f.Chal, CHALLEN)
@@ -252,7 +270,7 @@ func UnpackTicketReq(a []byte) (*TicketReq, int, error) {
 		return nil, 0, io.ErrShortBuffer
 	}
 	f := new(TicketReq)
-	f.RType = a[0]
+	f.RType = ReqType(a[0])
 	f.AuthID = gets(a[1:], ANAMELEN)
 	f.AuthDom = gets(a[1+ANAMELEN:], DOMLEN)
 	f.Chal = geta(a[1+ANAMELEN+DOMLEN:], CHALLEN)
@@ -440,7 +458,7 @@ func asReadResponse(fd io.Reader, n int) ([]byte, error) {
 	}
 
 	var buf []byte
-	switch b[0] {
+	switch ReqType(b[0]) {
 	case AuthOK:
 		buf, err = readn(fd, n)
 		if err != nil {
