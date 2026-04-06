@@ -12,6 +12,7 @@ package authsrv
 // this is a near transliteration of Plan 9 source /sys/src/libauthsrv, subject to the MIT licence
 
 import (
+	"bytes"
 	"crypto/des"
 	"encoding/binary"
 	"errors"
@@ -31,6 +32,7 @@ const (
 	CHALLEN   = 8  // length of a plan9 sk1 challenge
 	NETCHLEN  = 16 // max network challenge length (used in AS protocol)
 	SECRETLEN = 32 // max length of a Secret
+	MAXMSGLEN = 4096 // more than enough for any of these
 )
 
 // ReqType gives the source of a request or reply: Plan 9's encryption numberings (anti-replay).
@@ -96,15 +98,15 @@ const AUTHENTLEN = CHALLEN + 4 + 1
 
 // PasswordReq is a password change request.
 // Old and New are the plaintext versions of the old and new passwords.
-// ChangeSecret is non-zero if another secret stored by the authentication
-// server (the POP3 or Inferno secret) should be changed as well or instead.
+// ChangeSecret is true if another secret stored by the authentication
+// server, the POP3 or Inferno secret, should be changed as well or instead.
 // The server does not store Old or New: instead it converts both using
 // PassToKey and compares or stores the results.
 type PasswordReq struct {
 	Num          ReqType
 	Old          []byte // [ANAMELEN]
 	New          []byte // [ANAMELEN]
-	ChangeSecret byte
+	ChangeSecret bool
 	Secret       []byte // [SECRETLEN] new secret
 }
 
@@ -167,20 +169,19 @@ func (f *Authenticator) Pack(key []byte) []byte {
 	return p
 }
 
-// UnpackAuthenticator returns an authenticator given a wire form.
+// Unpack unpacks an authenticator from a wire form, returning the size consumed.
 // The optional key is used to decrypt the data first.
-func UnpackAuthenticator(a []byte, key []byte) (*Authenticator, int, error) {
+func (f *Authenticator) Unpack(a []byte, key []byte) (int, error) {
 	if len(a) < AUTHENTLEN {
-		return nil, 0, io.ErrShortBuffer
+		return 0, io.ErrShortBuffer
 	}
 	if key != nil {
 		decrypt(key, a, AUTHENTLEN)
 	}
-	f := new(Authenticator)
 	f.Num = ReqType(a[0])
 	f.Chal = geta(a[1:], CHALLEN)
 	f.ID = get4(a[1+CHALLEN:])
-	return f, AUTHENTLEN, nil
+	return AUTHENTLEN, nil
 }
 
 // Pack returns the wire form of a password request.
@@ -190,7 +191,9 @@ func (f *PasswordReq) Pack(key []byte) []byte {
 	a[0] = byte(f.Num)
 	puta(a[1:], f.Old, ANAMELEN)
 	puta(a[1+ANAMELEN:], f.New, ANAMELEN)
-	a[1+2*ANAMELEN] = f.ChangeSecret
+	if f.ChangeSecret {
+		a[1+2*ANAMELEN] = 1
+	}
 	puta(a[1+2*ANAMELEN+1:], f.Secret, SECRETLEN)
 	if key != nil {
 		encrypt(key, a, len(a))
@@ -198,25 +201,26 @@ func (f *PasswordReq) Pack(key []byte) []byte {
 	return a
 }
 
-// UnpackPasswordReq returns a password change request given the wire form.
+// Unpack returns a password change request given the wire form.
 // The optional key is used to decrypt the data first.
-func UnpackPasswordReq(a []byte, key []byte) (*PasswordReq, int, error) {
+func (f *PasswordReq) Unpack(a []byte, key []byte) (int, error) {
 	if len(a) < PASSREQLEN {
-		return nil, 0, io.ErrShortBuffer
+		return 0, io.ErrShortBuffer
 	}
 	if key != nil {
 		decrypt(key, a, PASSREQLEN)
 	}
-	f := new(PasswordReq)
 	f.Num = ReqType(a[0])
 	f.Old = geta(a[1:], ANAMELEN)
 	f.Old[ANAMELEN-1] = 0
 	f.New = geta(a[1+ANAMELEN:], ANAMELEN)
 	f.New[ANAMELEN-1] = 0
-	f.ChangeSecret = a[1+2*ANAMELEN]
+	if a[1+2*ANAMELEN] != 0 {
+		f.ChangeSecret = true
+	}
 	f.Secret = geta(a[1+2*ANAMELEN+1:], SECRETLEN)
 	f.Secret[SECRETLEN-1] = 0
-	return f, PASSREQLEN, nil
+	return PASSREQLEN, nil
 }
 
 // Pack returns the wire form of a ticket.
@@ -234,22 +238,21 @@ func (f *Ticket) Pack(key []byte) []byte {
 	return a
 }
 
-// UnpackTicket returns a ticket given its wire form.
+// Unpack unpacks a ticket given its wire form, returning the size consumed.
 // The optional key is used to decrypt the wire form first.
-func UnpackTicket(a []byte, key []byte) (*Ticket, int, error) {
+func (f *Ticket) Unpack(a []byte, key []byte) (int, error) {
 	if len(a) < TICKETLEN {
-		return nil, 0, io.ErrShortBuffer
+		return 0, io.ErrShortBuffer
 	}
 	if key != nil {
 		decrypt(key, a, TICKETLEN)
 	}
-	f := new(Ticket)
 	f.Num = ReqType(a[0])
 	f.Chal = geta(a[1:], CHALLEN)
 	f.ClientID = gets(a[1+CHALLEN:], ANAMELEN)
 	f.ServerID = gets(a[1+CHALLEN+ANAMELEN:], ANAMELEN)
 	f.Key = geta(a[1+CHALLEN+2*ANAMELEN:], DESKEYLEN)
-	return f, TICKETLEN, nil
+	return TICKETLEN, nil
 }
 
 // Pack returns the wire form of a ticket request.
@@ -264,19 +267,18 @@ func (f *TicketReq) Pack() []byte {
 	return a
 }
 
-// UnpackTicketReq returns a ticket request given its wire form.
-func UnpackTicketReq(a []byte) (*TicketReq, int, error) {
+// Unpack unpacks a ticket request given its wire form, returning the wire size.
+func (f *TicketReq) Unpack(a []byte) (int, error) {
 	if len(a) < TICKREQLEN {
-		return nil, 0, io.ErrShortBuffer
+		return 0, io.ErrShortBuffer
 	}
-	f := new(TicketReq)
 	f.RType = ReqType(a[0])
 	f.AuthID = gets(a[1:], ANAMELEN)
 	f.AuthDom = gets(a[1+ANAMELEN:], DOMLEN)
 	f.Chal = geta(a[1+ANAMELEN+DOMLEN:], CHALLEN)
 	f.HostID = gets(a[1+ANAMELEN+DOMLEN+CHALLEN:], ANAMELEN)
 	f.UID = gets(a[1+ANAMELEN+DOMLEN+CHALLEN+ANAMELEN:], ANAMELEN)
-	return f, TICKREQLEN, nil
+	return TICKREQLEN, nil
 }
 
 // Netcrypt returns the required response for a given challenge and key
@@ -412,19 +414,6 @@ func decrypt(key []byte, data []byte, n int) error {
 	return nil
 }
 
-// readn returns a buffer with exactly nb bytes, or returns an error.
-func readn(fd io.Reader, nb int) ([]byte, error) {
-	buf := make([]byte, nb)
-	nr, err := io.ReadAtLeast(fd, buf, nb)
-	if err != nil {
-		return nil, err
-	}
-	if nr != nb {
-		return nil, io.ErrUnexpectedEOF
-	}
-	return buf, nil
-}
-
 // exchange messages with auth server
 
 const (
@@ -444,55 +433,65 @@ func ASGetTicket(fd io.ReadWriter, tr *TicketReq, key []byte) (*Ticket, []byte, 
 	if err != nil {
 		return nil, nil, err
 	}
-	t, _, err := UnpackTicket(a, key)
+	t := new(Ticket)
+	l, err := t.Unpack(a, key)
 	if err != nil {
 		return nil, nil, fmt.Errorf("AS protocol botch: %w", err)
 	}
-	return t, a[TICKETLEN:], nil // can't unpack both since the second uses server key
+	return t, a[l:], nil // can't unpack both since the second uses server key
 }
 
 func asReadResponse(fd io.Reader, n int) ([]byte, error) {
-	b, err := readn(fd, 1)
+	buf := make([]byte, MAXMSGLEN)
+	n, err := io.ReadFull(fd, buf[0: 1])
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", pbmsg, err)
 	}
-
-	var buf []byte
-	switch ReqType(b[0]) {
+fmt.Printf("num: %d\n", buf[0])
+	switch ReqType(buf[0]) {
 	case AuthOK:
-		buf, err = readn(fd, n)
+		_, err = io.ReadFull(fd, buf[0: n])
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", pbmsg, err)
 		}
 
 	case AuthOKvar:
-		b, err = readn(fd, 5)
+		b := buf[0: 5]	// dddd\n
+		_, err = io.ReadFull(fd, b)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", pbmsg, err)
 		}
 		s := string(b)
 		n, err := strconv.ParseInt(s, 10, 32)
-		if err != nil || n <= 0 || n > 4096 {
+		if err != nil || n <= 0 || n > MAXMSGLEN {
 			return nil, fmt.Errorf("%s: invalid message length: %q", pbmsg, s)
 		}
-		buf, err = readn(fd, int(n))
+		_, err = io.ReadFull(fd, buf[0: n])
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", pbmsg, err)
 		}
 
 	case AuthErr:
-		b, err = readn(fd, 64)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", pbmsg, err)
+		nr := 0
+		for nr < AERRLEN {
+			n, err2 := fd.Read(buf[nr:])
+			if err2 != nil {
+				if err2 == io.EOF {
+					break
+				}
+				return nil, fmt.Errorf("%s: %w", pbmsg, err2)
+			}
+			i := bytes.IndexByte(buf[nr: nr+n], 0)
+			if i >= 0 {
+				nr += i
+				break
+			}
+			nr += n
 		}
-		i := 0
-		for ; i < len(b) && b[i] != 0; i++ {
-			// skip
-		}
-		return nil, fmt.Errorf("remote %s", string(b[0:i]))
+		return nil, fmt.Errorf("remote %s", string(buf[0: nr]))
 
 	default:
-		return nil, fmt.Errorf("%s resp %d", pbmsg, b[0])
+		return nil, fmt.Errorf("%s resp %d", pbmsg, buf[0])
 	}
 	return buf, nil
 }
