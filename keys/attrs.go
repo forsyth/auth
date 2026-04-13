@@ -1,7 +1,7 @@
-package keys
-
+// Package keys implements authentication keys in the style of Plan 9's Factotum.
 // Keys are lists of attributes of the form of name=value and name?.
-// A name starting with ! is secret
+// A name starting with ! names a secret and its value must be handled with care.
+package keys
 
 import (
 	"fmt"
@@ -76,7 +76,10 @@ func (a *Attr) Less(b *Attr) bool {
 	return a.Name < b.Name
 }
 
-// Attrs represents a set of attributes.
+// Attrs represents a sequence of attributes.
+// Currently it is a slice not a map to keep the
+// original textual order if possible, although it
+// is not clear that matters.
 type Attrs []*Attr
 
 // ParseAttrs parses and returns the attribute/value pairs from string s.
