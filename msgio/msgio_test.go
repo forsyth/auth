@@ -32,7 +32,7 @@ func checkData(data []byte) bool {
 
 func reader(t *testing.T, r *os.File, done chan<- int) {
 	defer r.Close()
-	msg := msgio.New(r)
+	msg := msgio.NewReader(r)
 	for _, size := range sizes {
 		buf := make([]byte, size)
 		if size > msgio.MaxMsgLen {
@@ -79,7 +79,7 @@ func TestMsgIO(t *testing.T) {
 	r, w, _ := os.Pipe()
 	done := make(chan int)
 	go reader(t, r, done)
-	msg := msgio.New(w)
+	msg := msgio.NewWriter(w)
 	for _, size := range sizes {
 		buf := data(size)
 		n, err := msg.Write(buf)
